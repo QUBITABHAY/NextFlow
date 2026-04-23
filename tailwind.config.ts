@@ -13,24 +13,36 @@ const config: Config = {
       // ─── Colors ────────────────────────────────────
       colors: {
         krea: {
-          black: "#0a0a0a",
+          black: "#000000",
           surface: "#141414",
           elevated: "#1e1e1e",
           offwhite: "#f5f5f5",
 
-          white: "#f0f0f0",
+          white: "#ffffff",
           muted: "#888888",
-          subtle: "#555555",
+          subtle: "rgba(255, 255, 255, 0.3)",
 
           lime: "#c8ff57",
           "lime-dim": "#9ecc3a",
           violet: "#a78bfa",
           "violet-dim": "#7c5cf0",
 
-          border: "rgba(255,255,255,0.08)",
-          "border-hover": "rgba(255,255,255,0.15)",
-          "border-active": "rgba(255,255,255,0.25)",
+          border: "rgba(255, 255, 255, 0.08)",
+          "border-hover": "rgba(255, 255, 255, 0.15)",
+          "border-active": "rgba(255, 255, 255, 0.25)",
+
+          sidebar: "#000000",
+          "sidebar-accent": "#1a1a1a",
         },
+      },
+
+      spacing: {
+        "sidebar-expanded": "256px",
+        "sidebar-collapsed": "52px",
+        "4.5": "18px",
+        "13": "52px",
+        "15": "60px",
+        "18": "72px",
       },
 
       // ─── Typography ────────────────────────────────
@@ -93,14 +105,6 @@ const config: Config = {
         DEFAULT: "150ms",
         fast: "100ms",
         slow: "300ms",
-      },
-
-      // ─── Spacing ───────────────────────────────────
-      spacing: {
-        "4.5": "18px",
-        "13": "52px",
-        "15": "60px",
-        "18": "72px",
       },
 
       maxWidth: {
