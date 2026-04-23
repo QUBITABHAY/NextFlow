@@ -1,26 +1,76 @@
 @import "tailwindcss";
+@import "@xyflow/react/dist/style.css";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  color-scheme: dark;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
+html,
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  height: 100%;
+  margin: 0;
+  background: #07090d;
+  color: #ffffff;
+}
+
+/* React Flow overrides */
+.react-flow__renderer,
+.react-flow__pane {
+  background: transparent !important;
+}
+
+/* Remove default node borders and shadows */
+.react-flow__node {
+  border: none !important;
+  box-shadow: none !important;
+  background: transparent !important;
+}
+
+.react-flow__node.selected {
+  border: none !important;
+  box-shadow: none !important;
+}
+
+.react-flow__edge-path {
+  stroke-linecap: round;
+  transition: filter 0.2s ease, stroke-width 0.2s ease;
+}
+
+.react-flow__edge.selected .react-flow__edge-path,
+.react-flow__edge:hover .react-flow__edge-path {
+  filter: drop-shadow(0 0 6px rgba(15, 97, 216, 0.9));
+  stroke-width: 3;
+}
+
+/* Custom Selection UI */
+.react-flow__selectionpane {
+  z-index: 10 !important;
+}
+
+.react-flow__selection {
+  background-color: rgba(0, 102, 255, 0.04) !important;
+  border: none !important;
+  outline: none !important;
+  box-shadow: none !important;
+  
+  /* High-quality "Marching Ants" Circulating Animation */
+  /* Using 2px thickness and 16px dash/gap cycle to match zoomed reference */
+  background-image: 
+    linear-gradient(90deg, #0066ff 50%, transparent 50%), 
+    linear-gradient(90deg, #0066ff 50%, transparent 50%), 
+    linear-gradient(0deg, #0066ff 50%, transparent 50%), 
+    linear-gradient(0deg, #0066ff 50%, transparent 50%) !important;
+  background-repeat: repeat-x, repeat-x, repeat-y, repeat-y !important;
+  background-size: 16px 2px, 16px 2px, 2px 16px, 2px 16px !important;
+  background-position: 0% 0%, 100% 100%, 0% 100%, 100% 0% !important;
+  animation: marching-ants-circulate 0.4s infinite linear !important;
+}
+
+@keyframes marching-ants-circulate {
+  0% {
+    background-position: 0px 0px, 16px 100%, 0px 16px, 100% 0px;
+  }
+  100% {
+    background-position: 16px 0px, 0px 100%, 0px 0px, 100% 16px;
+  }
 }
