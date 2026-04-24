@@ -185,6 +185,8 @@ function WorkflowBuilder({ workflowId }: { workflowId: string }) {
               strokeWidth: 2,
             },
           }}
+          elevateNodesOnSelect={true}
+          elevateEdgesOnSelect={true}
           proOptions={{ hideAttribution: true }}
         >
           <Background
