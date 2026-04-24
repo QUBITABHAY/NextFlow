@@ -350,8 +350,8 @@ export function WorkflowCardNode({
         </span>
       </div>
       <div
-        className={`w-[220px] min-h-[430px] rounded-2xl border text-[11px] relative p-3 transition-all ${isLight ? "bg-white border-black/5 shadow-[0_8px_30px_rgb(0,0,0,0.04)] text-black/80 hover:border-black/10" : "bg-[#1c1e24] border-white/10 shadow-[0_22px_50px_rgba(0,0,0,0.45)] text-white/80 hover:border-white/20"}`}
-        style={{ borderColor: selected ? "#1188ff" : undefined }}
+        className={`w-[220px] min-h-[430px] rounded-2xl border text-[11px] relative p-3 transition-all ${isLight ? "bg-white border-black/5 shadow-[0_8px_30px_rgb(0,0,0,0.04)] text-black/80 hover:border-black/10" : "bg-[#1c1e24] border-white/10 shadow-[0_22px_50px_rgba(0,0,0,0.45)] text-white/80 hover:border-white/20"} ${data.isRunning ? (isExtractFrameNode ? "node-processing-video" : "node-processing") : ""}`}
+        style={{ borderColor: selected ? (isExtractFrameNode ? "#22c55e" : "#1188ff") : undefined }}
         onMouseEnter={() => setIsHovering(true)}
         onMouseLeave={() => setIsHovering(false)}
       >
@@ -365,7 +365,7 @@ export function WorkflowCardNode({
               top: "57%",
               left: "0px",
               backgroundColor: "#e3c92f",
-              boxShadow: `0 0 0 4px rgba(17, 136, 255, 0.4)`,
+              boxShadow: `0 0 0 4px rgba(227, 201, 47, 0.4)`,
             }}
           />
         )}
@@ -562,8 +562,8 @@ export function WorkflowCardNode({
                   style={{
                     top: "50%",
                     left: "-14px",
-                    backgroundColor: "#1188ff",
-                    boxShadow: `0 0 0 4px rgba(17, 136, 255, 0.4)`,
+                    backgroundColor: isExtractFrameNode ? "#22c55e" : "#1188ff",
+                    boxShadow: isExtractFrameNode ? `0 0 0 4px rgba(34, 197, 94, 0.4)` : `0 0 0 4px rgba(17, 136, 255, 0.4)`,
                   }}
                 />
               </div>
