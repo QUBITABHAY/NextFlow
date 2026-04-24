@@ -10,6 +10,10 @@ export type WorkflowNodeData = {
   inputBadge?: string;
   isRunning?: boolean;
   runResult?: string | null;
+  cropX?: number;
+  cropY?: number;
+  cropWidth?: number;
+  cropHeight?: number;
 };
 
 export type PaletteItem = {

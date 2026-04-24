@@ -1,15 +1,34 @@
 import { MarkerType, type Edge, type Node } from "@xyflow/react";
 import { PaletteItem, WorkflowNodeData } from "./types";
 
+export const HANDLE_COLORS = {
+  yellow: "#e3c92f",
+  blue: "#1188ff",
+  green: "#22c55e",
+} as const;
+
+export function getStrokeColor(handleId: string | null | undefined): string {
+  if (handleId?.includes("yellow")) return HANDLE_COLORS.yellow;
+  if (handleId?.includes("green")) return HANDLE_COLORS.green;
+  return HANDLE_COLORS.blue;
+}
+
+export function isSameColorFamily(
+  sourceHandle: string | null | undefined,
+  targetHandle: string | null | undefined,
+): boolean {
+  for (const color of Object.keys(HANDLE_COLORS)) {
+    if (sourceHandle?.includes(color) && targetHandle?.includes(color))
+      return true;
+  }
+  return false;
+}
+
 export const paletteItems: PaletteItem[] = [
   { label: "Text Node", model: "Text" },
   { label: "Image Input", model: "Image" },
   { label: "Video Input", model: "Video" },
-  { label: "Image Generator", model: "Krea 1" },
-  { label: "Image Editor", model: "Flux 2 Klein" },
-  { label: "Video Generator", model: "Krea Video" },
-  { label: "Prompt Remix", model: "Remix V2" },
-  { label: "Upscale", model: "Sharp 4x" },
+  { label: "Crop Image", model: "Crop Image" },
 ];
 
 export const initialNodes: Node[] = [
@@ -38,49 +57,24 @@ export const initialNodes: Node[] = [
     },
   },
   {
-    id: "krea-1",
+    id: "crop-image-1",
     type: "workflowCard",
     position: { x: 400, y: 116 },
     data: {
-      title: "Krea 1",
-      gpu: "6 CU",
-      model: "Krea 1",
-      prompt: "A beautiful sunset over a calm ocean",
-      placeholder: "Enter prompt",
+      title: "Crop Image",
+      gpu: "",
+      model: "Crop Image",
+      prompt: "",
+      placeholder: "",
       lowerLeft: "Image",
       lowerRight: "Result",
       rightLabel: "Image",
-    },
-  },
-  {
-    id: "flux-2-klein",
-    type: "workflowCard",
-    position: { x: 750, y: 130 },
-    data: {
-      title: "Flux 2 Klein",
-      gpu: "",
-      model: "Flux 2 Klein",
-      prompt: "",
-      placeholder: "Describe the edit you want",
-      lowerLeft: "Base Image",
-      lowerRight: "Receiving input",
-      rightLabel: "Result",
-      inputBadge: "Receiving input",
+      cropX: 0,
+      cropY: 0,
+      cropWidth: 100,
+      cropHeight: 100,
     },
   },
 ];
 
-export const initialEdges: Edge[] = [
-  {
-    id: "e-krea-flux",
-    source: "krea-1",
-    sourceHandle: "out-main-blue",
-    target: "flux-2-klein",
-    targetHandle: "in-lower-blue",
-    type: "customEdge",
-    style: {
-      stroke: "#1188ff",
-      strokeWidth: 2,
-    },
-  },
-];
+export const initialEdges: Edge[] = [];
