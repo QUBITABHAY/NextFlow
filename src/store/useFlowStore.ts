@@ -14,10 +14,18 @@ import {
   reconnectEdge,
 } from "@xyflow/react";
 import { PaletteItem } from "@/component/flow/types";
+import { getStrokeColor } from "@/component/flow/constants";
 
 type Snapshot = { nodes: Node[]; edges: Edge[] };
 
 const MAX_HISTORY = 100;
+
+function createSnapshot(nodes: Node[], edges: Edge[]): Snapshot {
+  return {
+    nodes: nodes.map((n) => ({ ...n })),
+    edges: edges.map((e) => ({ ...e })),
+  };
+}
 
 export type FlowState = {
   nodes: Node[];
@@ -50,13 +58,10 @@ export type FlowState = {
 /** Push the current state into the past stack, clear future. */
 function pushHistory(
   get: () => FlowState,
-  set: (partial: Partial<FlowState>) => void
+  set: (partial: Partial<FlowState>) => void,
 ) {
   const { nodes, edges, past } = get();
-  const snapshot: Snapshot = {
-    nodes: nodes.map((n) => ({ ...n })),
-    edges: edges.map((e) => ({ ...e })),
-  };
+  const snapshot = createSnapshot(nodes, edges);
   const newPast = [...past, snapshot].slice(-MAX_HISTORY);
   set({ past: newPast, future: [], canUndo: true, canRedo: false });
 }
@@ -79,11 +84,10 @@ export const useFlowStore = create<FlowState>((set, get) => ({
 
     const previous = past[past.length - 1];
     const newPast = past.slice(0, -1);
-    const currentSnapshot: Snapshot = {
-      nodes: nodes.map((n) => ({ ...n })),
-      edges: edges.map((e) => ({ ...e })),
-    };
-    const newFuture = [currentSnapshot, ...future].slice(0, MAX_HISTORY);
+    const newFuture = [createSnapshot(nodes, edges), ...future].slice(
+      0,
+      MAX_HISTORY,
+    );
 
     set({
       nodes: previous.nodes,
@@ -101,11 +105,7 @@ export const useFlowStore = create<FlowState>((set, get) => ({
 
     const next = future[0];
     const newFuture = future.slice(1);
-    const currentSnapshot: Snapshot = {
-      nodes: nodes.map((n) => ({ ...n })),
-      edges: edges.map((e) => ({ ...e })),
-    };
-    const newPast = [...past, currentSnapshot].slice(-MAX_HISTORY);
+    const newPast = [...past, createSnapshot(nodes, edges)].slice(-MAX_HISTORY);
 
     set({
       nodes: next.nodes,
@@ -125,8 +125,7 @@ export const useFlowStore = create<FlowState>((set, get) => ({
     // Only snapshot for changes that actually mutate structure (not position drags in progress)
     const isSignificant = changes.some(
       (c) =>
-        c.type === "remove" ||
-        (c.type === "position" && c.dragging === false)
+        c.type === "remove" || (c.type === "position" && c.dragging === false),
     );
     if (isSignificant) {
       pushHistory(get, set);
@@ -149,29 +148,17 @@ export const useFlowStore = create<FlowState>((set, get) => ({
   onConnect: (connection: Connection) => {
     pushHistory(get, set);
 
-    const isYellow = connection.sourceHandle?.includes("yellow");
-    const isGreen = connection.sourceHandle?.includes("green");
-    const isBlue = connection.sourceHandle?.includes("blue");
-
-    const strokeColor = isYellow
-      ? "#e3c92f"
-      : isGreen
-      ? "#22c55e"
-      : isBlue
-      ? "#1188ff"
-      : "#1188ff";
-
     set({
       edges: addEdge(
         {
           ...connection,
           type: "customEdge",
           style: {
-            stroke: strokeColor,
+            stroke: getStrokeColor(connection.sourceHandle),
             strokeWidth: 2,
           },
         } as any,
-        get().edges
+        get().edges,
       ),
     });
   },
@@ -221,6 +208,21 @@ export const useFlowStore = create<FlowState>((set, get) => ({
     } else if (item.model === "Image" || item.model === "Video") {
       nodeType = "mediaNode";
       newNodeData = { type: item.model.toLowerCase() };
+    } else if (item.model === "Crop Image") {
+      newNodeData = {
+        title: "Crop Image",
+        gpu: "",
+        model: "Crop Image",
+        prompt: "",
+        placeholder: "",
+        lowerLeft: "Image",
+        lowerRight: "Result",
+        rightLabel: "Image",
+        cropX: 0,
+        cropY: 0,
+        cropWidth: 100,
+        cropHeight: 100,
+      };
     } else {
       newNodeData = {
         title: item.label,
@@ -252,7 +254,7 @@ export const useFlowStore = create<FlowState>((set, get) => ({
     pushHistory(get, set);
     set((state) => ({
       nodes: state.nodes.map((n) =>
-        n.id === nodeId ? { ...n, data: { ...n.data, ...newData } } : n
+        n.id === nodeId ? { ...n, data: { ...n.data, ...newData } } : n,
       ),
     }));
   },
