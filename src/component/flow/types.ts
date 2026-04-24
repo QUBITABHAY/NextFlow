@@ -14,6 +14,10 @@ export type WorkflowNodeData = {
   cropY?: number;
   cropWidth?: number;
   cropHeight?: number;
+  uploadedImageUrl?: string;
+  uploadedVideoUrl?: string;
+  frameTimestamp?: number;
+  frameTimestampMode?: "seconds" | "percentage";
 };
 
 export type PaletteItem = {

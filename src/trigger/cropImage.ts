@@ -39,14 +39,25 @@ export const cropImage = task({
     );
 
     try {
-      logger.info("Downloading input image...");
-      const response = await fetch(payload.imageUrl);
-      if (!response.ok) {
-        throw new Error(`Failed to download image: ${response.statusText}`);
+      let buffer: Buffer;
+
+      if (payload.imageUrl.startsWith("data:")) {
+        logger.info("Decoding base64 image data...");
+        const base64Data = payload.imageUrl.split(",")[1];
+        if (!base64Data) throw new Error("Invalid base64 data URL");
+        buffer = Buffer.from(base64Data, "base64");
+        logger.info("Base64 image decoded", { size: buffer.length });
+      } else {
+        logger.info("Downloading input image...");
+        const response = await fetch(payload.imageUrl);
+        if (!response.ok) {
+          throw new Error(`Failed to download image: ${response.statusText}`);
+        }
+        buffer = Buffer.from(await response.arrayBuffer());
+        logger.info("Image downloaded", { size: buffer.length });
       }
-      const buffer = Buffer.from(await response.arrayBuffer());
+
       fs.writeFileSync(inputPath, buffer);
-      logger.info("Image downloaded", { size: buffer.length });
 
       logger.info("Probing image dimensions...");
       const { stdout: probeOutput } = await execAsync(

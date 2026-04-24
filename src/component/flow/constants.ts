@@ -1,5 +1,5 @@
-import { MarkerType, type Edge, type Node } from "@xyflow/react";
-import { PaletteItem, WorkflowNodeData } from "./types";
+import { type Edge, type Node } from "@xyflow/react";
+import { PaletteItem } from "./types";
 
 export const HANDLE_COLORS = {
   yellow: "#e3c92f",
@@ -29,6 +29,7 @@ export const paletteItems: PaletteItem[] = [
   { label: "Image Input", model: "Image" },
   { label: "Video Input", model: "Video" },
   { label: "Crop Image", model: "Crop Image" },
+  { label: "Extract Frame", model: "Extract Frame" },
 ];
 
 export const initialNodes: Node[] = [

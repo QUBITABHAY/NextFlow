@@ -31,7 +31,10 @@ export default function RootLayout({
         lang="en"
         className={`${spaceGrotesk.variable} ${ibmPlexMono.variable} h-full antialiased`}
       >
-        <body className="min-h-full flex flex-col font-[var(--font-space-grotesk)]" suppressHydrationWarning>
+        <body
+          className="min-h-full flex flex-col font-(--font-space-grotesk)"
+          suppressHydrationWarning
+        >
           {children}
         </body>
       </html>

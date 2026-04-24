@@ -3,6 +3,7 @@
 import { tasks, runs } from "@trigger.dev/sdk/v3";
 import type { executeNodeAction } from "@/trigger/nodeAction";
 import type { cropImage } from "@/trigger/cropImage";
+import type { extractFrame } from "@/trigger/extractFrame";
 
 export async function triggerNodeAction(
   nodeId: string,
@@ -81,6 +82,64 @@ export async function triggerNodeAction(
       return {
         success: false,
         error: "Crop task timed out after 2 minutes.",
+      };
+    }
+
+    // Extract Frame → dedicated extract-frame task
+    if (nodeType === "Extract Frame") {
+      const videoUrl = inputData?.media?.[0];
+      if (!videoUrl) {
+        return {
+          success: false,
+          error: "No video input connected. Connect a Video Input node or upload a video.",
+        };
+      }
+
+      const handle = await tasks.trigger<typeof extractFrame>("extract-frame", {
+        nodeId,
+        videoUrl,
+        frameTimestamp: inputData?.frameTimestamp ?? 0,
+        frameTimestampMode: inputData?.frameTimestampMode ?? "seconds",
+      });
+
+      const maxAttempts = 120;
+      for (let i = 0; i < maxAttempts; i++) {
+        await new Promise((r) => setTimeout(r, 1000));
+
+        const run = await runs.retrieve(handle.id);
+
+        if (run.status === "COMPLETED") {
+          const output = run.output as any;
+          if (output?.success) {
+            return {
+              success: true,
+              runId: handle.id,
+              runResult: output.result,
+            };
+          }
+          return {
+            success: false,
+            error: output?.result ?? "Frame extraction completed but no output",
+          };
+        }
+
+        if (
+          run.status === "FAILED" ||
+          run.status === "CRASHED" ||
+          run.status === "CANCELED" ||
+          run.status === "SYSTEM_FAILURE" ||
+          run.status === "TIMED_OUT"
+        ) {
+          return {
+            success: false,
+            error: `Extract frame task ${run.status.toLowerCase()}. Check Trigger.dev dashboard.`,
+          };
+        }
+      }
+
+      return {
+        success: false,
+        error: "Extract frame task timed out after 2 minutes.",
       };
     }
 

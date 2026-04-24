@@ -29,7 +29,7 @@ export function Dock({
       </button>
 
       <div
-        className={`w-[30px] h-[1px] ${isLight ? "bg-black/5" : "bg-white/5"} my-1`}
+        className={`w-[30px] h-px ${isLight ? "bg-black/5" : "bg-white/5"} my-1`}
       />
 
       {/* Home Icon */}
@@ -81,7 +81,7 @@ export function Dock({
       <button
         className={`w-8 h-8 mb-4 rounded-full flex items-center justify-center cursor-pointer transition-all ${isLight ? "bg-black/5 text-black/60" : "bg-white/5 text-white/60"}`}
       >
-        <div className="w-5 h-5 rounded-full bg-gradient-to-tr from-purple-500 to-pink-500"></div>
+        <div className="w-5 h-5 rounded-full bg-linear-to-tr from-purple-500 to-pink-500"></div>
       </button>
     </div>
   );

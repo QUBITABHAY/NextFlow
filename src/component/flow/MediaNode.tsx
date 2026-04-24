@@ -254,9 +254,9 @@ export function MediaNode({
   };
 
   return (
-    <div className="relative font-[var(--font-space-grotesk)]">
+    <div className="relative font-(--font-space-grotesk)">
       {/* Floating Top Label */}
-      <div className="absolute -top-[28px] left-3 flex items-center gap-2">
+      <div className="absolute top-[-28px] left-3 flex items-center gap-2">
         {Icon}
         <span
           className={`${isLight ? "text-black/50" : "text-white/40"} text-[15px] font-medium tracking-wide`}
@@ -310,7 +310,7 @@ export function MediaNode({
 
             {/* Top Toolbar (Hover) */}
             <div
-              className={`absolute top-0 left-0 w-full p-4 flex justify-between items-center bg-gradient-to-b from-black/60 to-transparent transition-opacity duration-200 ${isHovering ? "opacity-100" : "opacity-0"} z-30`}
+              className={`absolute top-0 left-0 w-full p-4 flex justify-between items-center bg-linear-to-b from-black/60 to-transparent transition-opacity duration-200 ${isHovering ? "opacity-100" : "opacity-0"} z-30`}
             >
               <button
                 onClick={handleClear}
@@ -385,7 +385,7 @@ export function MediaNode({
 
             {/* URL badge at bottom */}
             <div
-              className={`absolute bottom-0 left-0 w-full px-3 py-2 flex items-center gap-2 bg-gradient-to-t from-black/60 to-transparent transition-opacity duration-200 z-30 ${isHovering ? "opacity-100" : "opacity-0"}`}
+              className={`absolute bottom-0 left-0 w-full px-3 py-2 flex items-center gap-2 bg-linear-to-t from-black/60 to-transparent transition-opacity duration-200 z-30 ${isHovering ? "opacity-100" : "opacity-0"}`}
             >
               <svg
                 width="12"
@@ -592,7 +592,7 @@ export function MediaNode({
           type="target"
           id={`in-${handleId}`}
           position={Position.Left}
-          className="!w-4 !h-4 !border-none transition-all duration-300 !z-50"
+          className="w-4! h-4! border-none! transition-all duration-300 z-50!"
           style={{
             top: "50%",
             left: "0px",
@@ -606,7 +606,7 @@ export function MediaNode({
           type="source"
           id={`out-${handleId}`}
           position={Position.Right}
-          className="!w-4 !h-4 !border-none transition-all duration-300 !z-50"
+          className="w-4! h-4! border-none! transition-all duration-300 z-50!"
           style={{
             top: "50%",
             right: "0px",

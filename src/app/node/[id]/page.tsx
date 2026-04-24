@@ -196,7 +196,7 @@ function WorkflowBuilder({ workflowId }: { workflowId: string }) {
             }
           />
           <MiniMap
-            className={`!w-[200px] !h-[140px] !m-0 !right-4 !bottom-4 !rounded-xl !overflow-hidden !border shadow-2xl backdrop-blur-xl ${isLight ? "!border-black/5 !bg-white/90" : "!border-white/10 !bg-[#0b0d11]/90"}`}
+            className={`w-[200px]! h-[140px]! m-0! right-4! bottom-4! rounded-xl! overflow-hidden! border! shadow-2xl backdrop-blur-xl ${isLight ? "border-black/5! bg-white/90!" : "border-white/10! bg-[#0b0d11]/90!"}`}
             position="bottom-right"
             nodeColor={() =>
               isLight ? "rgba(0, 0, 0, 0.1)" : "rgba(255, 255, 255, 0.2)"

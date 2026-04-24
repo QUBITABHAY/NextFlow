@@ -26,11 +26,12 @@ export function WorkflowCardNode({
   const [showUploadDropdown, setShowUploadDropdown] = useState(false);
 
   const isCropNode = data.model === "Crop Image";
+  const isExtractFrameNode = data.model === "Extract Frame";
   const updateNodeInternals = useUpdateNodeInternals();
 
   useEffect(() => {
     updateNodeInternals(id);
-  }, [id, isCropNode, updateNodeInternals]);
+  }, [id, isCropNode, isExtractFrameNode, updateNodeInternals]);
 
   const uploadToTransloadit = useCallback(
     async (file: File) => {
@@ -131,7 +132,7 @@ export function WorkflowCardNode({
 
         setUploadProgress(100);
         setUploadStatus("done");
-        updateNodeData(id, { uploadedImageUrl: result.url });
+        updateNodeData(id, isExtractFrameNode ? { uploadedVideoUrl: result.url } : { uploadedImageUrl: result.url });
       } catch (err: any) {
         setUploadStatus("error");
         setErrorMsg(err.message ?? "Upload failed");
@@ -182,17 +183,31 @@ export function WorkflowCardNode({
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const allowed = [
-      "image/jpeg",
-      "image/jpg",
-      "image/png",
-      "image/webp",
-      "image/gif",
-    ];
-    if (!allowed.includes(file.type)) {
-      setUploadStatus("error");
-      setErrorMsg("Only JPG, JPEG, PNG, WEBP, GIF files are allowed");
-      return;
+    if (isExtractFrameNode) {
+      const allowedVideo = [
+        "video/mp4",
+        "video/quicktime",
+        "video/webm",
+        "video/x-m4v",
+      ];
+      if (!allowedVideo.includes(file.type)) {
+        setUploadStatus("error");
+        setErrorMsg("Only MP4, MOV, WEBM, M4V files are allowed");
+        return;
+      }
+    } else {
+      const allowed = [
+        "image/jpeg",
+        "image/jpg",
+        "image/png",
+        "image/webp",
+        "image/gif",
+      ];
+      if (!allowed.includes(file.type)) {
+        setUploadStatus("error");
+        setErrorMsg("Only JPG, JPEG, PNG, WEBP, GIF files are allowed");
+        return;
+      }
     }
 
     uploadToTransloadit(file);
@@ -226,7 +241,21 @@ export function WorkflowCardNode({
       )
       .map((input) => (input.data as any)?.url);
 
-    if (data.uploadedImageUrl) {
+    // Also pick up outputs from connected workflow nodes (e.g. Extract Frame → Crop Image)
+    connectedInputs
+      .filter((input) => {
+        const result = (input.data as any)?.runResult;
+        return (
+          input.nodeType === "workflowCard" &&
+          result &&
+          (result.startsWith("http") || result.startsWith("data:image"))
+        );
+      })
+      .forEach((input) => mediaInputs.push((input.data as any).runResult));
+
+    if (isExtractFrameNode && data.uploadedVideoUrl) {
+      mediaInputs.unshift(data.uploadedVideoUrl);
+    } else if (data.uploadedImageUrl) {
       mediaInputs.unshift(data.uploadedImageUrl);
     }
 
@@ -236,6 +265,7 @@ export function WorkflowCardNode({
         model: data.model,
         mediaInputs,
         isCropNode,
+        isExtractFrameNode,
       });
 
       const response = await triggerNodeAction(
@@ -249,6 +279,10 @@ export function WorkflowCardNode({
             cropY: data.cropY ?? 0,
             cropWidth: data.cropWidth ?? 100,
             cropHeight: data.cropHeight ?? 100,
+          }),
+          ...(isExtractFrameNode && {
+            frameTimestamp: data.frameTimestamp ?? 0,
+            frameTimestampMode: data.frameTimestampMode ?? "seconds",
           }),
         },
       );
@@ -280,8 +314,8 @@ export function WorkflowCardNode({
   };
 
   return (
-    <div className="relative font-[var(--font-space-grotesk)]">
-      <div className="absolute -top-[28px] left-3 flex items-center gap-2">
+    <div className="relative font-(--font-space-grotesk)">
+      <div className="absolute top-[-28px] left-3 flex items-center gap-2">
         <svg
           width="15"
           height="15"
@@ -294,6 +328,17 @@ export function WorkflowCardNode({
         >
           {isCropNode ? (
             <path d="M6 2v14a2 2 0 0 0 2 2h14M18 22V8a2 2 0 0 0-2-2H2" />
+          ) : isExtractFrameNode ? (
+            <>
+              <rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18" />
+              <line x1="7" y1="2" x2="7" y2="22" />
+              <line x1="17" y1="2" x2="17" y2="22" />
+              <line x1="2" y1="12" x2="22" y2="12" />
+              <line x1="2" y1="7" x2="7" y2="7" />
+              <line x1="2" y1="17" x2="7" y2="17" />
+              <line x1="17" y1="7" x2="22" y2="7" />
+              <line x1="17" y1="17" x2="22" y2="17" />
+            </>
           ) : (
             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" />
           )}
@@ -310,12 +355,12 @@ export function WorkflowCardNode({
         onMouseEnter={() => setIsHovering(true)}
         onMouseLeave={() => setIsHovering(false)}
       >
-        {!isCropNode && (
+        {!isCropNode && !isExtractFrameNode && (
           <Handle
             type="target"
             id="in-main-yellow"
             position={Position.Left}
-            className="!w-3 !h-3 !border-none transition-transform duration-300 !z-50 hover:scale-125"
+            className="w-3! h-3! border-none! transition-transform duration-300 z-50! hover:scale-125"
             style={{
               top: "57%",
               left: "0px",
@@ -329,7 +374,7 @@ export function WorkflowCardNode({
           type="source"
           id="out-main-blue"
           position={Position.Right}
-          className="!w-3 !h-3 !border-none transition-transform duration-300 !z-50 hover:scale-125"
+          className="w-3! h-3! border-none! transition-transform duration-300 z-50! hover:scale-125"
           style={{
             top: "103px",
             right: "0px",
@@ -339,7 +384,7 @@ export function WorkflowCardNode({
         />
 
         <div
-          className={`h-[182px] relative rounded-xl grid place-items-center text-sm mb-3 overflow-hidden group ${isLight ? "bg-black/[0.03] text-black/40" : "bg-white/[0.02] text-white/40"}`}
+          className={`h-[182px] relative rounded-xl grid place-items-center text-sm mb-3 overflow-hidden group ${isLight ? "bg-black/3 text-black/40" : "bg-white/2 text-white/40"}`}
         >
           {data.isRunning ? (
             <div className="flex flex-col items-center gap-3">
@@ -374,6 +419,26 @@ export function WorkflowCardNode({
                   alt="Generated result"
                   className="w-full h-full object-cover"
                 />
+              ) : data.inputBadge === "Failed" ? (
+                <div className="flex flex-col items-center justify-center h-full p-3 gap-2 bg-transparent">
+                  <svg
+                    width="24"
+                    height="24"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="#ef4444"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <circle cx="12" cy="12" r="10" />
+                    <line x1="12" y1="8" x2="12" y2="12" />
+                    <line x1="12" y1="16" x2="12.01" y2="16" />
+                  </svg>
+                  <span className="text-red-400 text-[12px] text-center leading-tight wrap-break-word">
+                    {data.runResult}
+                  </span>
+                </div>
               ) : (
                 <div className="flex flex-col items-center justify-center h-full p-2 gap-2 bg-transparent">
                   <svg
@@ -399,7 +464,9 @@ export function WorkflowCardNode({
             <span className="font-medium">
               {isCropNode
                 ? "Add or connect an image"
-                : "Results will appear here"}
+                : isExtractFrameNode
+                  ? "Add or connect a video"
+                  : "Results will appear here"}
             </span>
           )}
 
@@ -425,7 +492,7 @@ export function WorkflowCardNode({
           )}
         </div>
 
-        {!isCropNode && (
+        {!isCropNode && !isExtractFrameNode && (
           <div className="flex items-center justify-between mb-2">
             <span className={isLight ? "text-black/40" : "text-white/50"}>
               Model
@@ -491,7 +558,7 @@ export function WorkflowCardNode({
                   type="target"
                   id="in-lower-blue"
                   position={Position.Left}
-                  className="!w-3 !h-3 !border-none transition-transform duration-300 !z-50 hover:scale-125"
+                  className="w-3! h-3! border-none! transition-transform duration-300 z-50! hover:scale-125"
                   style={{
                     top: "50%",
                     left: "-14px",
@@ -549,7 +616,7 @@ export function WorkflowCardNode({
             </div>
 
             {uploadStatus === "error" && errorMsg && (
-              <div className="mt-2 mb-2 text-red-500 text-[10px] break-words">
+              <div className="mt-2 mb-2 text-red-500 text-[10px] wrap-break-word">
                 {errorMsg}
               </div>
             )}
@@ -642,6 +709,236 @@ export function WorkflowCardNode({
               );
             })}
           </>
+        ) : isExtractFrameNode ? (
+          <>
+            <div className="relative mt-1 mb-4 w-full nodrag">
+              <input
+                type="file"
+                ref={fileInputRef}
+                className="hidden"
+                accept=".mp4,.mov,.webm,.m4v"
+                onChange={handleFileChange}
+              />
+              <div
+                className={`w-full h-[36px] rounded-xl flex items-center justify-between px-3 cursor-pointer transition-colors border ${isLight ? "bg-white/50 border-black/10 hover:bg-black/5" : "bg-white/5 border-white/5 hover:bg-white/10"}`}
+                onClick={() => setShowUploadDropdown(!showUploadDropdown)}
+              >
+                <div className="flex items-center gap-2 overflow-hidden">
+                  <span
+                    className={`text-[12px] truncate ${isLight ? "text-black/70" : "text-white/70"}`}
+                  >
+                    {uploadStatus === "uploading"
+                      ? `Uploading... ${uploadProgress}%`
+                      : uploadStatus === "error"
+                        ? "Upload failed"
+                        : data.uploadedVideoUrl
+                          ? "Video uploaded"
+                          : "Add file"}
+                  </span>
+                </div>
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                >
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                  <polyline points="14 2 14 8 20 8"></polyline>
+                </svg>
+
+                <Handle
+                  type="target"
+                  id="in-lower-green"
+                  position={Position.Left}
+                  className="w-3! h-3! border-none! transition-transform duration-300 z-50! hover:scale-125"
+                  style={{
+                    top: "50%",
+                    left: "-14px",
+                    backgroundColor: "#22c55e",
+                    boxShadow: `0 0 0 4px rgba(34, 197, 94, 0.4)`,
+                  }}
+                />
+              </div>
+
+              {showUploadDropdown && (
+                <div
+                  className={`absolute top-[40px] left-0 w-[180px] rounded-xl border p-1 z-50 shadow-xl ${isLight ? "bg-white border-black/10" : "bg-[#1c1e24] border-white/10"}`}
+                >
+                  <button
+                    onClick={() => {
+                      setShowUploadDropdown(false);
+                      fileInputRef.current?.click();
+                    }}
+                    className={`w-full text-left px-3 py-2 text-[12px] rounded-lg transition-colors flex items-center gap-2 ${isLight ? "hover:bg-black/5 text-black/80" : "hover:bg-white/5 text-white/80"}`}
+                  >
+                    <svg
+                      width="14"
+                      height="14"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                    >
+                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                      <polyline points="17 8 12 3 7 8" />
+                      <line x1="12" y1="3" x2="12" y2="15" />
+                    </svg>
+                    Upload file
+                  </button>
+                  <button
+                    onClick={() => setShowUploadDropdown(false)}
+                    className={`w-full text-left px-3 py-2 text-[12px] rounded-lg transition-colors flex items-center gap-2 ${isLight ? "hover:bg-black/5 text-black/80" : "hover:bg-white/5 text-white/80"}`}
+                  >
+                    <svg
+                      width="14"
+                      height="14"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                    >
+                      <rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18" />
+                      <line x1="7" y1="2" x2="7" y2="22" />
+                      <line x1="17" y1="2" x2="17" y2="22" />
+                    </svg>
+                    Select asset
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {uploadStatus === "error" && errorMsg && (
+              <div className="mt-2 mb-2 text-red-500 text-[10px] wrap-break-word">
+                {errorMsg}
+              </div>
+            )}
+
+            <div
+              className={`w-full h-px mb-3 ${isLight ? "bg-black/5" : "bg-white/5"}`}
+            />
+
+            <div
+              className={`my-1.5 font-medium flex items-center gap-1.5 ${isLight ? "text-black/40" : "text-white/45"}`}
+            >
+              <svg
+                width="12"
+                height="12"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.5"
+              >
+                <circle cx="12" cy="12" r="10" />
+                <polyline points="12 6 12 12 16 14" />
+              </svg>
+              Settings
+            </div>
+
+            <div
+              className={`flex items-center justify-between mb-2.5 ${isLight ? "text-black/40" : "text-white/45"}`}
+            >
+              <span>Timestamp</span>
+              <button
+                onClick={() =>
+                  updateNodeData(id, {
+                    frameTimestampMode:
+                      (data.frameTimestampMode ?? "seconds") === "seconds"
+                        ? "percentage"
+                        : "seconds",
+                  })
+                }
+                className={`h-[24px] rounded-lg border text-[11px] px-2.5 transition-colors flex items-center gap-1.5 ${isLight ? "border-black/5 bg-white text-black/60 hover:bg-black/5" : "border-white/10 bg-black/40 text-[#f6f7fb] hover:bg-white/10"}`}
+              >
+                {(data.frameTimestampMode ?? "seconds") === "seconds"
+                  ? "Seconds"
+                  : "Percent"}
+                <svg
+                  width="10"
+                  height="10"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="3"
+                >
+                  <polyline points="6 9 12 15 18 9"></polyline>
+                </svg>
+              </button>
+            </div>
+
+            <div className="flex items-center justify-between mb-2">
+              <span
+                className={`w-[48px] ${isLight ? "text-black/60" : "text-white/60"}`}
+              >
+                {(data.frameTimestampMode ?? "seconds") === "seconds"
+                  ? "Time"
+                  : "%"}
+              </span>
+
+              <div
+                className={`flex-1 h-[26px] relative rounded-lg overflow-hidden nodrag ml-2 ${isLight ? "bg-black/5" : "bg-white/5"}`}
+              >
+                <div
+                  className={`absolute top-0 left-0 bottom-0 pointer-events-none transition-all ${isLight ? "bg-black/10" : "bg-white/10"}`}
+                  style={{
+                    width:
+                      (data.frameTimestampMode ?? "seconds") === "percentage"
+                        ? `${data.frameTimestamp ?? 0}%`
+                        : `${Math.min(((data.frameTimestamp ?? 0) / 300) * 100, 100)}%`,
+                  }}
+                />
+                <div
+                  className={`absolute right-2.5 top-1/2 -translate-y-1/2 text-[12px] font-medium pointer-events-none ${isLight ? "text-black/80" : "text-white/80"}`}
+                >
+                  {(data.frameTimestampMode ?? "seconds") === "seconds"
+                    ? `${data.frameTimestamp ?? 0}s`
+                    : `${data.frameTimestamp ?? 0}%`}
+                </div>
+                <input
+                  type="range"
+                  min={0}
+                  max={
+                    (data.frameTimestampMode ?? "seconds") === "percentage"
+                      ? 100
+                      : 300
+                  }
+                  step={
+                    (data.frameTimestampMode ?? "seconds") === "percentage"
+                      ? 1
+                      : 0.1
+                  }
+                  value={data.frameTimestamp ?? 0}
+                  onChange={(e) =>
+                    updateNodeData(id, {
+                      frameTimestamp: Number(e.target.value),
+                    })
+                  }
+                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer nodrag"
+                />
+              </div>
+
+              <button
+                onClick={() => updateNodeData(id, { frameTimestamp: 0 })}
+                className={`w-6 h-6 flex items-center justify-center transition-colors ml-1.5 rounded-md ${isLight ? "text-black/30 hover:text-black/70 hover:bg-black/5" : "text-white/30 hover:text-white/70 hover:bg-white/5"}`}
+                title="Reset to default"
+              >
+                <svg
+                  width="12"
+                  height="12"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+                  <path d="M3 3v5h5" />
+                </svg>
+              </button>
+            </div>
+          </>
         ) : (
           <>
             <div
@@ -663,7 +960,7 @@ export function WorkflowCardNode({
             </div>
 
             <div
-              className={`w-full h-[1px] mb-3 ${isLight ? "bg-black/5" : "bg-white/5"}`}
+              className={`w-full h-px mb-3 ${isLight ? "bg-black/5" : "bg-white/5"}`}
             />
 
             <div
@@ -714,9 +1011,9 @@ export function WorkflowCardNode({
           </>
         )}
 
-        {!isCropNode && (
+        {!isCropNode && !isExtractFrameNode && (
           <div
-            className={`absolute -right-[46px] top-[192px] text-[10px] uppercase tracking-wider rotate-90 origin-left ${isLight ? "text-black/30" : "text-white/40"}`}
+            className={`absolute right-[-46px] top-[192px] text-[10px] uppercase tracking-wider rotate-90 origin-left ${isLight ? "text-black/30" : "text-white/40"}`}
           >
             {data.rightLabel}
           </div>

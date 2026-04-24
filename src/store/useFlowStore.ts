@@ -223,6 +223,19 @@ export const useFlowStore = create<FlowState>((set, get) => ({
         cropWidth: 100,
         cropHeight: 100,
       };
+    } else if (item.model === "Extract Frame") {
+      newNodeData = {
+        title: "Extract Frame",
+        gpu: "",
+        model: "Extract Frame",
+        prompt: "",
+        placeholder: "",
+        lowerLeft: "Video",
+        lowerRight: "Frame",
+        rightLabel: "Image",
+        frameTimestamp: 0,
+        frameTimestampMode: "seconds",
+      };
     } else {
       newNodeData = {
         title: item.label,

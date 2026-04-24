@@ -289,7 +289,7 @@ export function BottomActions() {
           </div>
 
           <div
-            className={`w-[1px] h-6 mx-1 ${isLight ? "bg-black/5" : "bg-[#333]"}`}
+            className={`w-px h-6 mx-1 ${isLight ? "bg-black/5" : "bg-[#333]"}`}
           ></div>
 
           <div className="relative group">
