@@ -12,13 +12,13 @@ import {
   type Edge,
 } from "@xyflow/react";
 import { useFlowStore } from "@/store/useFlowStore";
-import { useUser, UserButton } from "@clerk/nextjs";
 
 import { WorkflowCardNode } from "@/component/flow/WorkflowCardNode";
 import { TextNode } from "@/component/flow/TextNode";
 import { MediaNode } from "@/component/flow/MediaNode";
 import { CustomEdge } from "@/component/flow/CustomEdge";
-import { paletteItems } from "@/component/flow/constants";
+import { paletteItems, isSameColorFamily } from "@/component/flow/constants";
+import { useTheme } from "@/hooks/useTheme";
 import { Dock } from "@/component/flow/Dock";
 import { SidePanel } from "@/component/flow/SidePanel";
 import { TopActions } from "@/component/flow/TopActions";
@@ -30,7 +30,9 @@ const AUTOSAVE_DELAY = 1500;
 
 function WorkflowBuilder({ workflowId }: { workflowId: string }) {
   const [query, setQuery] = useState("");
-  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [saveStatus, setSaveStatus] = useState<
+    "idle" | "saving" | "saved" | "error"
+  >("idle");
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isInitialized = useRef(false);
 
@@ -51,7 +53,7 @@ function WorkflowBuilder({ workflowId }: { workflowId: string }) {
     theme,
   } = useFlowStore();
 
-  const isLight = theme === "light";
+  const { isLight } = useTheme();
 
   // --- Load workflow on mount ---
   useEffect(() => {
@@ -116,19 +118,11 @@ function WorkflowBuilder({ workflowId }: { workflowId: string }) {
     [query],
   );
 
-  const isValidConnection = useCallback((connection: Connection | Edge) => {
-    const isSourceYellow = connection.sourceHandle?.includes("yellow");
-    const isTargetYellow = connection.targetHandle?.includes("yellow");
-    const isSourceBlue = connection.sourceHandle?.includes("blue");
-    const isTargetBlue = connection.targetHandle?.includes("blue");
-    const isSourceGreen = connection.sourceHandle?.includes("green");
-    const isTargetGreen = connection.targetHandle?.includes("green");
-
-    if (isSourceYellow && isTargetYellow) return true;
-    if (isSourceBlue && isTargetBlue) return true;
-    if (isSourceGreen && isTargetGreen) return true;
-    return false;
-  }, []);
+  const isValidConnection = useCallback(
+    (connection: Connection | Edge) =>
+      isSameColorFamily(connection.sourceHandle, connection.targetHandle),
+    [],
+  );
 
   const nodeTypes = useMemo(
     () => ({
@@ -149,7 +143,9 @@ function WorkflowBuilder({ workflowId }: { workflowId: string }) {
   const leftOffset = collapsed ? "left-[64px]" : "left-[324px]";
 
   return (
-    <div className={`relative flex h-screen w-full overflow-hidden transition-colors duration-300 ${isLight ? "bg-white text-black" : "bg-[#0e0e0e] text-white"}`}>
+    <div
+      className={`relative flex h-screen w-full overflow-hidden transition-colors duration-300 ${isLight ? "bg-white text-black" : "bg-[#0e0e0e] text-white"}`}
+    >
       <aside className="relative z-30 flex h-full">
         <Dock setCollapsed={setCollapsed} />
         <SidePanel
@@ -164,21 +160,6 @@ function WorkflowBuilder({ workflowId }: { workflowId: string }) {
 
       <main className="relative flex-1 overflow-hidden">
         <TopActions leftOffset={leftOffset} />
-
-        {/* Save status indicator */}
-        <div className={`absolute top-4 z-50 transition-all duration-300 ${leftOffset}`}>
-          <div className={`ml-4 flex items-center gap-2 h-9 px-3 rounded-xl border text-xs font-medium transition-all ${isLight ? "border-black/5 bg-white text-black/50" : "border-white/10 bg-[#12151b]/95 text-white/50"} ${saveStatus === "idle" ? "opacity-0 pointer-events-none" : "opacity-100"}`}>
-            {saveStatus === "saving" && (
-              <><svg className="animate-spin w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 12a9 9 0 1 1-6.219-8.56" /></svg>Saving…</>
-            )}
-            {saveStatus === "saved" && (
-              <><svg className="w-3 h-3 text-green-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="20 6 9 17 4 12" /></svg>Saved</>
-            )}
-            {saveStatus === "error" && (
-              <><svg className="w-3 h-3 text-red-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>Save failed</>
-            )}
-          </div>
-        </div>
 
         <ReactFlow
           className="bg-transparent"
@@ -210,12 +191,16 @@ function WorkflowBuilder({ workflowId }: { workflowId: string }) {
             variant={BackgroundVariant.Dots}
             gap={20}
             size={1}
-            color={isLight ? "rgba(0, 0, 0, 0.12)" : "rgba(255, 255, 255, 0.08)"}
+            color={
+              isLight ? "rgba(0, 0, 0, 0.12)" : "rgba(255, 255, 255, 0.08)"
+            }
           />
           <MiniMap
             className={`!w-[200px] !h-[140px] !m-0 !right-4 !bottom-4 !rounded-xl !overflow-hidden !border shadow-2xl backdrop-blur-xl ${isLight ? "!border-black/5 !bg-white/90" : "!border-white/10 !bg-[#0b0d11]/90"}`}
             position="bottom-right"
-            nodeColor={() => isLight ? "rgba(0, 0, 0, 0.1)" : "rgba(255, 255, 255, 0.2)"}
+            nodeColor={() =>
+              isLight ? "rgba(0, 0, 0, 0.1)" : "rgba(255, 255, 255, 0.2)"
+            }
             maskColor={isLight ? "rgba(0, 0, 0, 0.05)" : "rgba(0, 0, 0, 0.7)"}
             bgColor="transparent"
             pannable
@@ -230,7 +215,11 @@ function WorkflowBuilder({ workflowId }: { workflowId: string }) {
   );
 }
 
-export default function NodePage({ params }: { params: Promise<{ id: string }> }) {
+export default function NodePage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
   const [workflowId, setWorkflowId] = useState<string | null>(null);
 
   useEffect(() => {
