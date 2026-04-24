@@ -1,9 +1,35 @@
 import { useFlowStore } from "@/store/useFlowStore";
 import { useTheme } from "@/hooks/useTheme";
+import { useState, useEffect } from "react";
 
 export function TopActions({ leftOffset }: { leftOffset: string }) {
   const toggleTheme = useFlowStore((state) => state.toggleTheme);
+  const isWorkflowRunning = useFlowStore((state) => state.isWorkflowRunning);
+  const workflowError = useFlowStore((state) => state.workflowError);
+  const runWorkflow = useFlowStore((state) => state.runWorkflow);
+  const stopWorkflow = useFlowStore((state) => state.stopWorkflow);
   const { isLight } = useTheme();
+
+  const [showToast, setShowToast] = useState(false);
+  const [toastMessage, setToastMessage] = useState("");
+  const [toastType, setToastType] = useState<"success" | "error">("success");
+
+  // Show toast on workflow completion
+  useEffect(() => {
+    if (!isWorkflowRunning && workflowError) {
+      setToastMessage(workflowError);
+      setToastType("error");
+      setShowToast(true);
+    }
+  }, [isWorkflowRunning, workflowError]);
+
+  // Auto-dismiss toast
+  useEffect(() => {
+    if (showToast) {
+      const t = setTimeout(() => setShowToast(false), 4000);
+      return () => clearTimeout(t);
+    }
+  }, [showToast]);
 
   return (
     <>
@@ -82,6 +108,49 @@ export function TopActions({ leftOffset }: { leftOffset: string }) {
           )}
         </button>
 
+        {/* Run / Stop Workflow */}
+        {isWorkflowRunning ? (
+          <button
+            onClick={stopWorkflow}
+            className="h-9 rounded-xl border text-xs font-medium px-4 transition-all shadow-sm flex items-center gap-2 border-red-500/30 bg-red-500/10 text-red-400 hover:bg-red-500/20 hover:text-red-300"
+          >
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="currentColor"
+            >
+              <rect x="6" y="6" width="12" height="12" rx="1" />
+            </svg>
+            Stop
+          </button>
+        ) : (
+          <button
+            onClick={async () => {
+              setShowToast(false);
+              await runWorkflow();
+              // Show success toast if no error was set
+              const err = useFlowStore.getState().workflowError;
+              if (!err) {
+                setToastMessage("Workflow completed successfully");
+                setToastType("success");
+                setShowToast(true);
+              }
+            }}
+            className={`h-9 rounded-xl border text-xs font-medium px-4 transition-all shadow-sm flex items-center gap-2 ${isLight ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-700 hover:bg-emerald-500/20" : "border-emerald-500/30 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 hover:text-emerald-300"}`}
+          >
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="currentColor"
+            >
+              <polygon points="5 3 19 12 5 21 5 3" />
+            </svg>
+            Run Workflow
+          </button>
+        )}
+
         <button
           className={`h-9 rounded-xl border text-xs font-medium px-4 transition-all shadow-sm flex items-center gap-2 ${isLight ? "border-black/5 bg-white text-black/60 hover:bg-black/5" : "border-white/10 bg-[#12151b]/95 text-white/80 hover:bg-white/10 hover:text-white"}`}
         >
@@ -139,6 +208,44 @@ export function TopActions({ leftOffset }: { leftOffset: string }) {
           </svg>
         </button>
       </div>
+
+      {/* Workflow execution toast */}
+      {showToast && (
+        <div
+          className={`fixed top-16 right-4 z-50 flex items-center gap-2 px-4 py-2.5 rounded-xl border text-xs font-medium shadow-lg transition-all animate-in slide-in-from-top-2 ${
+            toastType === "success"
+              ? isLight
+                ? "bg-emerald-50 border-emerald-200 text-emerald-700"
+                : "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"
+              : isLight
+                ? "bg-red-50 border-red-200 text-red-700"
+                : "bg-red-500/10 border-red-500/20 text-red-400"
+          }`}
+        >
+          {toastType === "success" ? (
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+              <polyline points="22 4 12 14.01 9 11.01" />
+            </svg>
+          ) : (
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="10" />
+              <line x1="12" y1="8" x2="12" y2="12" />
+              <line x1="12" y1="16" x2="12.01" y2="16" />
+            </svg>
+          )}
+          <span className="max-w-[300px] truncate">{toastMessage}</span>
+          <button
+            onClick={() => setShowToast(false)}
+            className="ml-1 opacity-60 hover:opacity-100 transition-opacity"
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+        </div>
+      )}
     </>
   );
 }

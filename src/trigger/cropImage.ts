@@ -4,8 +4,37 @@ import { promisify } from "util";
 import fs from "fs";
 import path from "path";
 import os from "os";
+import https from "https";
+import http from "http";
 
 const execAsync = promisify(exec);
+
+function downloadToFile(url: string, dest: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const client = url.startsWith("https") ? https : http;
+    client
+      .get(url, (res) => {
+        if (
+          res.statusCode &&
+          res.statusCode >= 300 &&
+          res.statusCode < 400 &&
+          res.headers.location
+        ) {
+          downloadToFile(res.headers.location, dest).then(resolve, reject);
+          return;
+        }
+        if (!res.statusCode || res.statusCode >= 400) {
+          reject(new Error(`Failed to download: HTTP ${res.statusCode}`));
+          return;
+        }
+        const ws = fs.createWriteStream(dest);
+        res.pipe(ws);
+        ws.on("finish", () => ws.close(() => resolve()));
+        ws.on("error", reject);
+      })
+      .on("error", reject);
+  });
+}
 
 export const cropImage = task({
   id: "crop-image",
@@ -39,25 +68,19 @@ export const cropImage = task({
     );
 
     try {
-      let buffer: Buffer;
-
       if (payload.imageUrl.startsWith("data:")) {
         logger.info("Decoding base64 image data...");
         const base64Data = payload.imageUrl.split(",")[1];
         if (!base64Data) throw new Error("Invalid base64 data URL");
-        buffer = Buffer.from(base64Data, "base64");
+        const buffer = Buffer.from(base64Data, "base64");
+        fs.writeFileSync(inputPath, buffer);
         logger.info("Base64 image decoded", { size: buffer.length });
       } else {
         logger.info("Downloading input image...");
-        const response = await fetch(payload.imageUrl);
-        if (!response.ok) {
-          throw new Error(`Failed to download image: ${response.statusText}`);
-        }
-        buffer = Buffer.from(await response.arrayBuffer());
-        logger.info("Image downloaded", { size: buffer.length });
+        await downloadToFile(payload.imageUrl, inputPath);
+        const fileSize = fs.statSync(inputPath).size;
+        logger.info("Image downloaded", { size: fileSize });
       }
-
-      fs.writeFileSync(inputPath, buffer);
 
       logger.info("Probing image dimensions...");
       const { stdout: probeOutput } = await execAsync(

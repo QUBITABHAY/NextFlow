@@ -15,6 +15,7 @@ import {
 } from "@xyflow/react";
 import { PaletteItem } from "@/component/flow/types";
 import { getStrokeColor } from "@/component/flow/constants";
+import { executeWorkflow } from "@/lib/workflowExecutor";
 
 type Snapshot = { nodes: Node[]; edges: Edge[] };
 
@@ -53,6 +54,13 @@ export type FlowState = {
   setCollapsed: (collapsed: boolean | ((prev: boolean) => boolean)) => void;
   addNode: (item: PaletteItem) => void;
   updateNodeData: (nodeId: string, newData: any) => void;
+
+  // Workflow execution
+  isWorkflowRunning: boolean;
+  workflowError: string | null;
+  workflowAbort: AbortController | null;
+  runWorkflow: () => Promise<void>;
+  stopWorkflow: () => void;
 };
 
 /** Push the current state into the past stack, clear future. */
@@ -77,6 +85,10 @@ export const useFlowStore = create<FlowState>((set, get) => ({
   future: [],
   canUndo: false,
   canRedo: false,
+
+  isWorkflowRunning: false,
+  workflowError: null,
+  workflowAbort: null,
 
   undo: () => {
     const { past, future, nodes, edges } = get();
@@ -270,5 +282,39 @@ export const useFlowStore = create<FlowState>((set, get) => ({
         n.id === nodeId ? { ...n, data: { ...n.data, ...newData } } : n,
       ),
     }));
+  },
+
+  runWorkflow: async () => {
+    const { nodes, edges, isWorkflowRunning } = get();
+    if (isWorkflowRunning) return;
+
+    const abort = new AbortController();
+    set({ isWorkflowRunning: true, workflowError: null, workflowAbort: abort });
+
+    const result = await executeWorkflow(
+      nodes,
+      edges,
+      (nodeId, newData) => {
+        set((state) => ({
+          nodes: state.nodes.map((n) =>
+            n.id === nodeId ? { ...n, data: { ...n.data, ...newData } } : n,
+          ),
+        }));
+      },
+      () => get().nodes,
+      abort.signal,
+    );
+
+    set({
+      isWorkflowRunning: false,
+      workflowError: result.success ? null : (result.error ?? "Unknown error"),
+      workflowAbort: null,
+    });
+  },
+
+  stopWorkflow: () => {
+    const { workflowAbort } = get();
+    workflowAbort?.abort();
+    set({ isWorkflowRunning: false, workflowError: "Workflow stopped by user.", workflowAbort: null });
   },
 }));

@@ -4,8 +4,37 @@ import { promisify } from "util";
 import fs from "fs";
 import path from "path";
 import os from "os";
+import https from "https";
+import http from "http";
 
 const execAsync = promisify(exec);
+
+function downloadToFile(url: string, dest: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const client = url.startsWith("https") ? https : http;
+    client
+      .get(url, (res) => {
+        if (
+          res.statusCode &&
+          res.statusCode >= 300 &&
+          res.statusCode < 400 &&
+          res.headers.location
+        ) {
+          downloadToFile(res.headers.location, dest).then(resolve, reject);
+          return;
+        }
+        if (!res.statusCode || res.statusCode >= 400) {
+          reject(new Error(`Failed to download video: HTTP ${res.statusCode}`));
+          return;
+        }
+        const ws = fs.createWriteStream(dest);
+        res.pipe(ws);
+        ws.on("finish", () => ws.close(() => resolve()));
+        ws.on("error", reject);
+      })
+      .on("error", reject);
+  });
+}
 
 export const extractFrame = task({
   id: "extract-frame",
@@ -36,13 +65,9 @@ export const extractFrame = task({
 
     try {
       logger.info("Downloading input video...");
-      const response = await fetch(payload.videoUrl);
-      if (!response.ok) {
-        throw new Error(`Failed to download video: ${response.statusText}`);
-      }
-      const buffer = Buffer.from(await response.arrayBuffer());
-      fs.writeFileSync(inputPath, buffer);
-      logger.info("Video downloaded", { size: buffer.length });
+      await downloadToFile(payload.videoUrl, inputPath);
+      const fileSize = fs.statSync(inputPath).size;
+      logger.info("Video downloaded", { size: fileSize });
 
       // Always probe duration first to clamp seek position
       let seekSeconds = payload.frameTimestamp;

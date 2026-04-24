@@ -5,6 +5,80 @@ import type { executeNodeAction } from "@/trigger/nodeAction";
 import type { cropImage } from "@/trigger/cropImage";
 import type { extractFrame } from "@/trigger/extractFrame";
 
+const TERMINAL_STATUSES = new Set([
+  "FAILED",
+  "CRASHED",
+  "CANCELED",
+  "SYSTEM_FAILURE",
+  "TIMED_OUT",
+  "EXPIRED",
+]);
+
+// Max seconds a task can stay QUEUED / WAITING_FOR_DEPLOY before we bail
+const QUEUE_TIMEOUT = 15;
+const MAX_POLL = 120;
+
+/**
+ * Poll a Trigger.dev run until it completes, fails, or gets stuck in queue.
+ */
+async function pollRun(
+  runId: string,
+  label: string,
+): Promise<{ success: boolean; runId: string; runResult?: string; error?: string }> {
+  let queuedSeconds = 0;
+
+  for (let i = 0; i < MAX_POLL; i++) {
+    await new Promise((r) => setTimeout(r, 1000));
+
+    const run = await runs.retrieve(runId);
+
+    if (run.status === "COMPLETED") {
+      const output = run.output as any;
+      if (output?.success) {
+        return { success: true, runId, runResult: output.result };
+      }
+      return {
+        success: false,
+        runId,
+        error: output?.result ?? `${label} completed but produced no output`,
+      };
+    }
+
+    if (TERMINAL_STATUSES.has(run.status)) {
+      return {
+        success: false,
+        runId,
+        error: `${label} ${run.status.toLowerCase()}. Check Trigger.dev dashboard.`,
+      };
+    }
+
+    // Detect stuck queue — task hasn't started executing
+    if (
+      run.status === "WAITING" ||
+      run.status === "DELAYED" ||
+      run.status === "PENDING_VERSION"
+    ) {
+      queuedSeconds++;
+      if (queuedSeconds >= QUEUE_TIMEOUT) {
+        return {
+          success: false,
+          runId,
+          error: `${label} stuck in queue for ${QUEUE_TIMEOUT}s. Make sure \`trigger dev\` is running.`,
+        };
+      }
+    } else {
+      // Task is executing / reattempting — reset queue counter
+      queuedSeconds = 0;
+    }
+  }
+
+  return {
+    success: false,
+    runId,
+    error: `${label} timed out after 2 minutes.`,
+  };
+}
+
 export async function triggerNodeAction(
   nodeId: string,
   nodeType: string,
@@ -19,6 +93,7 @@ export async function triggerNodeAction(
       console.warn("No TRIGGER_SECRET_KEY found");
       return {
         success: false,
+        runId: "",
         error:
           "TRIGGER_SECRET_KEY is not configured. Add it to .env.local to run tasks.",
       };
@@ -30,6 +105,7 @@ export async function triggerNodeAction(
       if (!imageUrl) {
         return {
           success: false,
+          runId: "",
           error: "No image input connected. Connect an Image Input node.",
         };
       }
@@ -43,46 +119,7 @@ export async function triggerNodeAction(
         cropHeight: inputData?.cropHeight ?? 100,
       });
 
-      // Poll for completion
-      const maxAttempts = 120;
-      for (let i = 0; i < maxAttempts; i++) {
-        await new Promise((r) => setTimeout(r, 1000));
-
-        const run = await runs.retrieve(handle.id);
-
-        if (run.status === "COMPLETED") {
-          const output = run.output as any;
-          if (output?.success) {
-            return {
-              success: true,
-              runId: handle.id,
-              runResult: output.result,
-            };
-          }
-          return {
-            success: false,
-            error: output?.result ?? "Crop completed but no output",
-          };
-        }
-
-        if (
-          run.status === "FAILED" ||
-          run.status === "CRASHED" ||
-          run.status === "CANCELED" ||
-          run.status === "SYSTEM_FAILURE" ||
-          run.status === "TIMED_OUT"
-        ) {
-          return {
-            success: false,
-            error: `Crop task ${run.status.toLowerCase()}. Check Trigger.dev dashboard.`,
-          };
-        }
-      }
-
-      return {
-        success: false,
-        error: "Crop task timed out after 2 minutes.",
-      };
+      return pollRun(handle.id, "Crop task");
     }
 
     // Extract Frame → dedicated extract-frame task
@@ -91,7 +128,9 @@ export async function triggerNodeAction(
       if (!videoUrl) {
         return {
           success: false,
-          error: "No video input connected. Connect a Video Input node or upload a video.",
+          runId: "",
+          error:
+            "No video input connected. Connect a Video Input node or upload a video.",
         };
       }
 
@@ -102,45 +141,7 @@ export async function triggerNodeAction(
         frameTimestampMode: inputData?.frameTimestampMode ?? "seconds",
       });
 
-      const maxAttempts = 120;
-      for (let i = 0; i < maxAttempts; i++) {
-        await new Promise((r) => setTimeout(r, 1000));
-
-        const run = await runs.retrieve(handle.id);
-
-        if (run.status === "COMPLETED") {
-          const output = run.output as any;
-          if (output?.success) {
-            return {
-              success: true,
-              runId: handle.id,
-              runResult: output.result,
-            };
-          }
-          return {
-            success: false,
-            error: output?.result ?? "Frame extraction completed but no output",
-          };
-        }
-
-        if (
-          run.status === "FAILED" ||
-          run.status === "CRASHED" ||
-          run.status === "CANCELED" ||
-          run.status === "SYSTEM_FAILURE" ||
-          run.status === "TIMED_OUT"
-        ) {
-          return {
-            success: false,
-            error: `Extract frame task ${run.status.toLowerCase()}. Check Trigger.dev dashboard.`,
-          };
-        }
-      }
-
-      return {
-        success: false,
-        error: "Extract frame task timed out after 2 minutes.",
-      };
+      return pollRun(handle.id, "Extract frame task");
     }
 
     // All other nodes → generic execute-node-action task
@@ -153,9 +154,9 @@ export async function triggerNodeAction(
       },
     );
 
-    return { success: true, runId: handle.id, runResult: "Task queued" };
+    return pollRun(handle.id, "Task");
   } catch (error: any) {
     console.error("Trigger error:", error);
-    return { success: false, error: error.message };
+    return { success: false, runId: "", runResult: undefined, error: error.message };
   }
 }
