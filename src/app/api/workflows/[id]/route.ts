@@ -1,91 +1,95 @@
-import { auth, currentUser } from "@clerk/nextjs/server";
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-
-/** Ensures the Clerk user exists in our DB. Safe to call on every request. */
-async function ensureUser(userId: string) {
-  const existing = await prisma.user.findUnique({ where: { id: userId } });
-  if (existing) return existing;
-
-  // User not in DB yet (webhook may not have fired). Fetch from Clerk and upsert.
-  const clerkUser = await currentUser();
-  const email = clerkUser?.emailAddresses?.[0]?.emailAddress ?? `${userId}@unknown.com`;
-  const name = [clerkUser?.firstName, clerkUser?.lastName].filter(Boolean).join(" ") || null;
-
-  return prisma.user.upsert({
-    where: { id: userId },
-    create: { id: userId, email, name },
-    update: { email, name },
-  });
-}
+import {
+  requireAuth,
+  findOwnedWorkflow,
+  jsonError,
+  jsonSuccess,
+} from "@/lib/api";
+import { ensureUser } from "@/lib/user";
+import { updateWorkflowSchema } from "@/lib/validations";
 
 // GET /api/workflows/[id]
 export async function GET(
   _req: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string }> },
 ) {
-  const { userId } = await auth();
-  if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const auth = await requireAuth();
+  if (!auth.ok) return auth.error;
 
   const { id } = await params;
+  const owned = await findOwnedWorkflow(id, auth.userId);
+  if (!owned.ok) return owned.error;
 
-  const workflow = await prisma.workflow.findUnique({ where: { id } });
-  if (!workflow) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  if (workflow.userId !== userId) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-
-  return NextResponse.json(workflow);
+  return jsonSuccess(owned.workflow);
 }
 
 // PATCH /api/workflows/[id] — upsert
 export async function PATCH(
   req: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string }> },
 ) {
-  const { userId } = await auth();
-  if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const auth = await requireAuth();
+  if (!auth.ok) return auth.error;
 
   const { id } = await params;
-  const body = await req.json();
-  const { title, nodes, edges, viewport } = body;
+
+  let rawBody;
+  try {
+    rawBody = await req.json();
+  } catch {
+    return jsonError("Invalid JSON", 400);
+  }
+
+  const validation = updateWorkflowSchema.safeParse(rawBody);
+  if (!validation.success) {
+    return jsonError("Validation failed", 400);
+  }
+
+  const { title, nodes, edges, viewport } = validation.data;
 
   // Make sure the user row exists before the FK reference
-  await ensureUser(userId);
+  await ensureUser(auth.userId);
+
+  const toJsonNull = <T>(
+    v: T | null | undefined,
+  ): T | typeof Prisma.JsonNull | undefined =>
+    v === null ? Prisma.JsonNull : v === undefined ? undefined : v;
 
   const workflow = await prisma.workflow.upsert({
     where: { id },
     create: {
       id,
       title: title ?? "Untitled",
-      userId,
+      userId: auth.userId,
       nodes: nodes ?? [],
       edges: edges ?? [],
-      viewport: viewport ?? null,
+      viewport: toJsonNull(viewport) ?? Prisma.JsonNull,
     },
     update: {
       ...(title !== undefined && { title }),
       ...(nodes !== undefined && { nodes }),
       ...(edges !== undefined && { edges }),
-      ...(viewport !== undefined && { viewport }),
+      ...(viewport !== undefined && { viewport: toJsonNull(viewport) }),
     },
   });
 
-  return NextResponse.json(workflow);
+  return jsonSuccess(workflow);
 }
 
 // DELETE /api/workflows/[id]
 export async function DELETE(
   _req: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string }> },
 ) {
-  const { userId } = await auth();
-  if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const auth = await requireAuth();
+  if (!auth.ok) return auth.error;
 
   const { id } = await params;
-
-  const workflow = await prisma.workflow.findUnique({ where: { id } });
-  if (!workflow) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  if (workflow.userId !== userId) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const owned = await findOwnedWorkflow(id, auth.userId);
+  if (!owned.ok) return owned.error;
 
   await prisma.workflow.delete({ where: { id } });
-  return NextResponse.json({ success: true });
+  return jsonSuccess({ success: true });
 }

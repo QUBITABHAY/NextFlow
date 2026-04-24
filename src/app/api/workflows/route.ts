@@ -1,17 +1,16 @@
-import { auth } from "@clerk/nextjs/server";
-import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { requireAuth, jsonSuccess } from "@/lib/api";
 
 // GET /api/workflows — list all workflows for the current user
 export async function GET() {
-  const { userId } = await auth();
-  if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const auth = await requireAuth();
+  if (!auth.ok) return auth.error;
 
   const workflows = await prisma.workflow.findMany({
-    where: { userId },
+    where: { userId: auth.userId },
     orderBy: { updatedAt: "desc" },
     select: { id: true, title: true, createdAt: true, updatedAt: true },
   });
 
-  return NextResponse.json(workflows);
+  return jsonSuccess(workflows);
 }

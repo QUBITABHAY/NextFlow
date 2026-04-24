@@ -2,12 +2,13 @@ import { Webhook } from "svix";
 import { headers } from "next/headers";
 import { WebhookEvent } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/prisma";
-import { NextResponse } from "next/server";
+import { jsonError, jsonSuccess } from "@/lib/api";
+import { buildDisplayName } from "@/lib/user";
 
 export async function POST(req: Request) {
   const WEBHOOK_SECRET = process.env.CLERK_WEBHOOK_SECRET;
   if (!WEBHOOK_SECRET) {
-    return NextResponse.json({ error: "Webhook secret not configured" }, { status: 500 });
+    return jsonError("Webhook secret not configured", 500);
   }
 
   const headerPayload = await headers();
@@ -16,7 +17,7 @@ export async function POST(req: Request) {
   const svix_signature = headerPayload.get("svix-signature");
 
   if (!svix_id || !svix_timestamp || !svix_signature) {
-    return NextResponse.json({ error: "Missing svix headers" }, { status: 400 });
+    return jsonError("Missing svix headers", 400);
   }
 
   const payload = await req.json();
@@ -31,13 +32,13 @@ export async function POST(req: Request) {
       "svix-signature": svix_signature,
     }) as WebhookEvent;
   } catch {
-    return NextResponse.json({ error: "Invalid signature" }, { status: 400 });
+    return jsonError("Invalid signature", 400);
   }
 
   if (event.type === "user.created" || event.type === "user.updated") {
     const { id, email_addresses, first_name, last_name } = event.data;
     const email = email_addresses?.[0]?.email_address ?? "";
-    const name = [first_name, last_name].filter(Boolean).join(" ") || null;
+    const name = buildDisplayName(first_name, last_name);
 
     await prisma.user.upsert({
       where: { id },
@@ -53,5 +54,5 @@ export async function POST(req: Request) {
     }
   }
 
-  return NextResponse.json({ received: true });
+  return jsonSuccess({ received: true });
 }
