@@ -1,6 +1,6 @@
 import { useStore, type ReactFlowState } from "@xyflow/react";
 
-const selectionSelector = (s: ReactFlowState) => s.selectionRect;
+const selectionSelector = (s: ReactFlowState) => s.userSelectionRect;
 
 export function SelectionOverlay() {
   const selectionRect = useStore(selectionSelector);

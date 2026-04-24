@@ -6,7 +6,7 @@ import {
   type EdgeProps,
 } from "@xyflow/react";
 import { useState } from "react";
-import { useFlowStore } from "@/store/useFlowStore";
+import { useTheme } from "@/hooks/useTheme";
 
 export function CustomEdge({
   id,
@@ -21,8 +21,7 @@ export function CustomEdge({
 }: EdgeProps) {
   const { setEdges } = useReactFlow();
   const [isHovered, setIsHovered] = useState(false);
-  const theme = useFlowStore((state) => state.theme);
-  const isLight = theme === "light";
+  const { isLight } = useTheme();
 
   const [edgePath, labelX, labelY] = getBezierPath({
     sourceX,

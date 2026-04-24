@@ -1,5 +1,6 @@
 import { Handle, Position, type Node, type NodeProps } from "@xyflow/react";
 import { useFlowStore } from "@/store/useFlowStore";
+import { useTheme } from "@/hooks/useTheme";
 
 export type TextNodeData = {
   text: string;
@@ -11,8 +12,7 @@ export function TextNode({
   selected,
 }: NodeProps<Node<TextNodeData>>) {
   const updateNodeData = useFlowStore((state) => state.updateNodeData);
-  const theme = useFlowStore((state) => state.theme);
-  const isLight = theme === "light";
+  const { isLight } = useTheme();
 
   return (
     <div className="relative font-[var(--font-space-grotesk)]">

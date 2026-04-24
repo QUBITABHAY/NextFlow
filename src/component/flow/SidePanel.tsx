@@ -1,6 +1,6 @@
 import { Dispatch, SetStateAction } from "react";
 import { PaletteItem } from "./types";
-import { useFlowStore } from "@/store/useFlowStore";
+import { useTheme } from "@/hooks/useTheme";
 
 export function SidePanel({
   collapsed,
@@ -17,8 +17,7 @@ export function SidePanel({
   filteredPalette: PaletteItem[];
   addNode: (item: PaletteItem) => void;
 }) {
-  const theme = useFlowStore((state) => state.theme);
-  const isLight = theme === "light";
+  const { isLight } = useTheme();
 
   return (
     <div
