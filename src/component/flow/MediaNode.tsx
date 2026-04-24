@@ -1,12 +1,7 @@
 "use client";
-import {
-  Handle,
-  Position,
-  useNodeConnections,
-  type Node,
-  type NodeProps,
-} from "@xyflow/react";
+import { Handle, Position, type Node, type NodeProps } from "@xyflow/react";
 import { useFlowStore } from "@/store/useFlowStore";
+import { useTheme } from "@/hooks/useTheme";
 import { useRef, useState, useCallback } from "react";
 
 export type MediaNodeData = {
@@ -49,8 +44,7 @@ export function MediaNode({
   const [uploadStatus, setUploadStatus] = useState<UploadStatus>("idle");
   const [uploadProgress, setUploadProgress] = useState(0);
   const [errorMsg, setErrorMsg] = useState<string>("");
-  const theme = useFlowStore((state) => state.theme);
-  const isLight = theme === "light";
+  const { isLight } = useTheme();
 
   const hideTargetDot = data.url && !isHovering && !selected;
   const hideSourceDot = data.url && !isHovering && !selected;
@@ -160,9 +154,15 @@ export function MediaNode({
               try {
                 const errBody = JSON.parse(xhr.responseText);
                 console.error("[Transloadit] Error response:", errBody);
-                const msg = errBody?.message ?? errBody?.error ?? errBody?.msg ?? "Unknown error";
+                const msg =
+                  errBody?.message ??
+                  errBody?.error ??
+                  errBody?.msg ??
+                  "Unknown error";
                 const code = errBody?.error ?? "";
-                reject(new Error(`Transloadit ${xhr.status}: ${code} — ${msg}`));
+                reject(
+                  new Error(`Transloadit ${xhr.status}: ${code} — ${msg}`),
+                );
               } catch {
                 reject(new Error(`Upload failed with status ${xhr.status}`));
               }
@@ -206,9 +206,7 @@ export function MediaNode({
           const uploadedFiles = Object.values(
             json.uploads ?? {},
           ).flat() as any[];
-          const resultFiles = Object.values(
-            json.results ?? {},
-          ).flat() as any[];
+          const resultFiles = Object.values(json.results ?? {}).flat() as any[];
           const allFiles = [...resultFiles, ...uploadedFiles];
           if (allFiles.length > 0) {
             setUploadProgress(100);
@@ -521,11 +519,6 @@ export function MediaNode({
                   <div className="text-center">
                     <span className="text-[14px] font-medium block">
                       Upload
-                    </span>
-                    <span
-                      className={`text-[11px] mt-0.5 block ${isLight ? "text-black/20" : "text-white/20"}`}
-                    >
-                      {isImage ? "JPG PNG WEBP GIF" : "MP4 MOV WEBM M4V"}
                     </span>
                   </div>
                 </button>
