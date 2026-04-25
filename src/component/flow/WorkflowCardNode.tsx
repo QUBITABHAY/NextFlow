@@ -29,6 +29,17 @@ export function WorkflowCardNode({
 
   const isCropNode = data.model === "Crop Image";
   const isExtractFrameNode = data.model === "Extract Frame";
+
+  const connectedTextNode = (() => {
+    for (const edge of edges) {
+      if (edge.target !== id) continue;
+      const sourceNode = nodes.find((n) => n.id === edge.source);
+      if (sourceNode?.type === "textNode") return sourceNode;
+    }
+    return null;
+  })();
+  const hasTextNodeConnected = !!connectedTextNode;
+  const connectedText = (connectedTextNode?.data as any)?.text || "";
   const updateNodeInternals = useUpdateNodeInternals();
 
   useEffect(() => {
@@ -134,7 +145,12 @@ export function WorkflowCardNode({
 
         setUploadProgress(100);
         setUploadStatus("done");
-        updateNodeData(id, isExtractFrameNode ? { uploadedVideoUrl: result.url } : { uploadedImageUrl: result.url });
+        updateNodeData(
+          id,
+          isExtractFrameNode
+            ? { uploadedVideoUrl: result.url }
+            : { uploadedImageUrl: result.url },
+        );
       } catch (err: any) {
         setUploadStatus("error");
         setErrorMsg(err.message ?? "Upload failed");
@@ -262,14 +278,18 @@ export function WorkflowCardNode({
     }
 
     const nodeTypeLabel = data.model || "WorkflowNode";
-    const inputSummary = [combinedPrompt, ...mediaInputs].filter(Boolean).join(" | ");
+    const inputSummary = [combinedPrompt, ...mediaInputs]
+      .filter(Boolean)
+      .join(" | ");
 
-    await recordSingleNodeRun(id, nodeTypeLabel, data.title || nodeTypeLabel, inputSummary, async () => {
-      try {
-        const response = await triggerNodeAction(
-          id,
-          nodeTypeLabel,
-          {
+    await recordSingleNodeRun(
+      id,
+      nodeTypeLabel,
+      data.title || nodeTypeLabel,
+      inputSummary,
+      async () => {
+        try {
+          const response = await triggerNodeAction(id, nodeTypeLabel, {
             prompt: combinedPrompt,
             media: mediaInputs,
             ...(isCropNode && {
@@ -282,33 +302,33 @@ export function WorkflowCardNode({
               frameTimestamp: data.frameTimestamp ?? 0,
               frameTimestampMode: data.frameTimestampMode ?? "seconds",
             }),
-          },
-        );
-
-        if (response.success) {
-          updateNodeData(id, {
-            isRunning: false,
-            runResult: response.runResult,
-            inputBadge: "Success",
           });
-          return { success: true, output: response.runResult };
-        } else {
+
+          if (response.success) {
+            updateNodeData(id, {
+              isRunning: false,
+              runResult: response.runResult,
+              inputBadge: "Success",
+            });
+            return { success: true, output: response.runResult };
+          } else {
+            updateNodeData(id, {
+              isRunning: false,
+              runResult: response.error || "Task failed",
+              inputBadge: "Failed",
+            });
+            return { success: false, error: response.error || "Task failed" };
+          }
+        } catch (err: any) {
           updateNodeData(id, {
             isRunning: false,
-            runResult: response.error || "Task failed",
+            runResult: err.message || "Unexpected error",
             inputBadge: "Failed",
           });
-          return { success: false, error: response.error || "Task failed" };
+          return { success: false, error: err.message || "Unexpected error" };
         }
-      } catch (err: any) {
-        updateNodeData(id, {
-          isRunning: false,
-          runResult: err.message || "Unexpected error",
-          inputBadge: "Failed",
-        });
-        return { success: false, error: err.message || "Unexpected error" };
-      }
-    });
+      },
+    );
   };
 
   return (
@@ -349,7 +369,13 @@ export function WorkflowCardNode({
       </div>
       <div
         className={`w-[220px] min-h-[430px] rounded-2xl border text-[11px] relative p-3 transition-all ${isLight ? "bg-white border-black/5 shadow-[0_8px_30px_rgb(0,0,0,0.04)] text-black/80 hover:border-black/10" : "bg-[#202020] border-[#1f1f1f] shadow-[0_22px_50px_rgba(0,0,0,0.45)] text-white/80 hover:border-white/20"} ${data.isRunning ? (isExtractFrameNode ? "node-processing-video" : "node-processing") : ""}`}
-        style={{ borderColor: selected ? (isExtractFrameNode ? "#22c55e" : "#1188ff") : undefined }}
+        style={{
+          borderColor: selected
+            ? isExtractFrameNode
+              ? "#22c55e"
+              : "#1188ff"
+            : undefined,
+        }}
         onMouseEnter={() => setIsHovering(true)}
         onMouseLeave={() => setIsHovering(false)}
       >
@@ -561,7 +587,9 @@ export function WorkflowCardNode({
                     top: "50%",
                     left: "-14px",
                     backgroundColor: isExtractFrameNode ? "#22c55e" : "#1188ff",
-                    boxShadow: isExtractFrameNode ? `0 0 0 4px rgba(34, 197, 94, 0.4)` : `0 0 0 4px rgba(17, 136, 255, 0.4)`,
+                    boxShadow: isExtractFrameNode
+                      ? `0 0 0 4px rgba(34, 197, 94, 0.4)`
+                      : `0 0 0 4px rgba(17, 136, 255, 0.4)`,
                   }}
                 />
               </div>
@@ -797,7 +825,14 @@ export function WorkflowCardNode({
                       stroke="currentColor"
                       strokeWidth="2"
                     >
-                      <rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18" />
+                      <rect
+                        x="2"
+                        y="2"
+                        width="20"
+                        height="20"
+                        rx="2.18"
+                        ry="2.18"
+                      />
                       <line x1="7" y1="2" x2="7" y2="22" />
                       <line x1="17" y1="2" x2="17" y2="22" />
                     </svg>
@@ -945,9 +980,16 @@ export function WorkflowCardNode({
               Prompt
             </div>
             <textarea
-              className={`w-full h-[82px] resize-none rounded-xl border leading-relaxed p-2.5 outline-none mb-2 transition-colors shadow-inner ${isLight ? "bg-[#f9fafb] border-black/5 text-black/80 focus:border-black/10 focus:bg-white" : "bg-[#171717] border-[#202020] text-white/80 focus:border-[#2a2a2a]"}`}
-              defaultValue={data.prompt}
-              placeholder={data.placeholder}
+              className={`w-full h-[82px] resize-none rounded-xl border leading-relaxed p-2.5 outline-none mb-2 transition-colors shadow-inner ${hasTextNodeConnected ? (isLight ? "bg-black/3 border-black/5 text-black/30 cursor-not-allowed" : "bg-white/2 border-[#202020] text-white/25 cursor-not-allowed") : isLight ? "bg-[#f9fafb] border-black/5 text-black/80 focus:border-black/10 focus:bg-white" : "bg-[#171717] border-[#202020] text-white/80 focus:border-[#2a2a2a]"}`}
+              value={hasTextNodeConnected ? connectedText : undefined}
+              defaultValue={hasTextNodeConnected ? undefined : data.prompt}
+              key={hasTextNodeConnected ? "connected" : "local"}
+              placeholder={
+                hasTextNodeConnected
+                  ? "Connected to Text node"
+                  : data.placeholder
+              }
+              disabled={hasTextNodeConnected}
             />
 
             <div

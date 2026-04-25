@@ -1,4 +1,10 @@
-import { Handle, Position, useUpdateNodeInternals, type Node, type NodeProps } from "@xyflow/react";
+import {
+  Handle,
+  Position,
+  useUpdateNodeInternals,
+  type Node,
+  type NodeProps,
+} from "@xyflow/react";
 import { useFlowStore } from "@/store/useFlowStore";
 import { useTheme } from "@/hooks/useTheme";
 import { useState, useEffect } from "react";
@@ -18,9 +24,34 @@ export type LLMNodeData = {
 
 export function LLMNode({ id, data, selected }: NodeProps<Node<LLMNodeData>>) {
   const updateNodeData = useFlowStore((state) => state.updateNodeData);
+  const nodes = useFlowStore((state) => state.nodes);
+  const edges = useFlowStore((state) => state.edges);
   const { isLight } = useTheme();
   const [showModelMenu, setShowModelMenu] = useState(false);
   const updateNodeInternals = useUpdateNodeInternals();
+
+  const getTextNodeForHandle = (handleId: string) => {
+    for (const edge of edges) {
+      if (edge.target !== id || edge.targetHandle !== handleId) continue;
+      const sourceNode = nodes.find((n) => n.id === edge.source);
+      if (sourceNode?.type === "textNode") return sourceNode;
+    }
+    return null;
+  };
+
+  const systemTextNode = getTextNodeForHandle("in-yellow-system");
+  const userTextNode = getTextNodeForHandle("in-yellow-user");
+  // Also check the generic blue handle — text nodes may connect there
+  const blueTextNode = getTextNodeForHandle("in-blue");
+
+  const systemConnected = !!systemTextNode;
+  const userConnected = !!(userTextNode || blueTextNode);
+
+  const connectedSystemText = (systemTextNode?.data as any)?.text || "";
+  const connectedUserText =
+    (userTextNode?.data as any)?.text ||
+    (blueTextNode?.data as any)?.text ||
+    "";
 
   useEffect(() => {
     updateNodeInternals(id);
@@ -188,16 +219,21 @@ export function LLMNode({ id, data, selected }: NodeProps<Node<LLMNodeData>>) {
             System Prompt
           </label>
           <textarea
-            className={`w-full h-[60px] rounded-xl border leading-relaxed p-3 text-[13px] outline-none transition-all shadow-inner resize-none ${isLight ? "bg-[#f9fafb] border-black/5 text-black/80 focus:bg-white focus:border-black/10" : "bg-[#171717] border-[#202020] text-white/90 focus:bg-[#171717] focus:border-[#2a2a2a]"}`}
-            value={data.systemPrompt}
+            className={`w-full h-[60px] rounded-xl border leading-relaxed p-3 text-[13px] outline-none transition-all shadow-inner resize-none ${systemConnected ? (isLight ? "bg-black/3 border-black/5 text-black/30 cursor-not-allowed" : "bg-white/2 border-[#202020] text-white/25 cursor-not-allowed") : isLight ? "bg-[#f9fafb] border-black/5 text-black/80 focus:bg-white focus:border-black/10" : "bg-[#171717] border-[#202020] text-white/90 focus:bg-[#171717] focus:border-[#2a2a2a]"}`}
+            value={systemConnected ? connectedSystemText : data.systemPrompt}
             onChange={(e) =>
               updateNodeData(id, { systemPrompt: e.target.value })
             }
-            placeholder="You are a helpful assistant..."
+            placeholder={
+              systemConnected
+                ? "Connected to Text node"
+                : "You are a helpful assistant..."
+            }
+            disabled={systemConnected}
           />
         </div>
 
-        {/* User Message */}
+        {/* User Prompt */}
         <div className="mb-3 relative">
           <Handle
             type="target"
@@ -216,7 +252,7 @@ export function LLMNode({ id, data, selected }: NodeProps<Node<LLMNodeData>>) {
             <label
               className={`text-[11px] font-semibold tracking-wider uppercase ${isLight ? "text-black/40" : "text-white/30"}`}
             >
-              User Message
+              User Prompt
             </label>
             <span
               className="text-[9px] font-bold tracking-wider uppercase px-1.5 py-0.5 rounded"
@@ -231,12 +267,15 @@ export function LLMNode({ id, data, selected }: NodeProps<Node<LLMNodeData>>) {
             </span>
           </div>
           <textarea
-            className={`w-full h-[80px] rounded-xl border leading-relaxed p-3 text-[13px] outline-none transition-all shadow-inner resize-none ${isLight ? "bg-[#f9fafb] border-black/5 text-black/80 focus:bg-white focus:border-black/10" : "bg-[#171717] border-[#202020] text-white/90 focus:bg-[#171717] focus:border-[#2a2a2a]"}`}
-            value={data.userMessage}
+            className={`w-full h-[80px] rounded-xl border leading-relaxed p-3 text-[13px] outline-none transition-all shadow-inner resize-none ${userConnected ? (isLight ? "bg-black/3 border-black/5 text-black/30 cursor-not-allowed" : "bg-white/2 border-[#202020] text-white/25 cursor-not-allowed") : isLight ? "bg-[#f9fafb] border-black/5 text-black/80 focus:bg-white focus:border-black/10" : "bg-[#171717] border-[#202020] text-white/90 focus:bg-[#171717] focus:border-[#2a2a2a]"}`}
+            value={userConnected ? connectedUserText : data.userMessage}
             onChange={(e) =>
               updateNodeData(id, { userMessage: e.target.value })
             }
-            placeholder="Enter your message..."
+            placeholder={
+              userConnected ? "Connected to Text node" : "Enter your message..."
+            }
+            disabled={userConnected}
           />
         </div>
 
