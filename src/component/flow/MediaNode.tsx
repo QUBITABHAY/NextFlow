@@ -41,6 +41,7 @@ export function MediaNode({
   const handleId = isImage ? "blue" : "green";
 
   const [isHovering, setIsHovering] = useState(false);
+  const [isDragOver, setIsDragOver] = useState(false);
   const [uploadStatus, setUploadStatus] = useState<UploadStatus>("idle");
   const [uploadProgress, setUploadProgress] = useState(0);
   const [errorMsg, setErrorMsg] = useState<string>("");
@@ -253,6 +254,44 @@ export function MediaNode({
     setErrorMsg("");
   };
 
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = "copy";
+    setIsDragOver(true);
+  }, []);
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(false);
+  }, []);
+
+  const handleDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setIsDragOver(false);
+
+      const file = e.dataTransfer.files?.[0];
+      if (!file) return;
+
+      const allowed = isImage ? IMAGE_ACCEPT : VIDEO_ACCEPT;
+      if (!allowed.includes(file.type)) {
+        setUploadStatus("error");
+        setErrorMsg(
+          isImage
+            ? "Only JPG, JPEG, PNG, WEBP, GIF files are allowed"
+            : "Only MP4, MOV, WEBM, M4V files are allowed",
+        );
+        return;
+      }
+
+      uploadToTransloadit(file);
+    },
+    [isImage, uploadToTransloadit],
+  );
+
   return (
     <div className="relative font-(--font-space-grotesk)">
       {/* Floating Top Label */}
@@ -267,10 +306,11 @@ export function MediaNode({
 
       {/* Main Card */}
       <div
-        className={`rounded-3xl transition-all box-border flex items-center justify-evenly relative ${isLight ? "bg-white shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-transparent" : "bg-[#202020] shadow-2xl border-transparent"} ${data.url ? "p-0 w-auto h-auto border-none" : "w-[320px] h-[210px] p-4 border-2"}`}
+        className={`rounded-3xl transition-all box-border flex items-center justify-evenly relative ${isLight ? "bg-white shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-transparent" : "bg-[#202020] shadow-2xl border-transparent"} ${data.url ? "p-0 w-auto h-auto border-none" : "w-[320px] h-[210px] p-4 border-2"} ${isDragOver && !data.url ? (isLight ? "!border-dashed !bg-black/[0.02]" : "!border-dashed !bg-white/[0.03]") : ""}`}
         style={{
-          borderColor:
-            selected && !data.url
+          borderColor: isDragOver && !data.url
+            ? color
+            : selected && !data.url
               ? color
               : isLight && !data.url
                 ? "rgba(0,0,0,0.05)"
@@ -278,6 +318,9 @@ export function MediaNode({
         }}
         onMouseEnter={() => setIsHovering(true)}
         onMouseLeave={() => setIsHovering(false)}
+        onDragOver={!data.url ? handleDragOver : undefined}
+        onDragLeave={!data.url ? handleDragLeave : undefined}
+        onDrop={!data.url ? handleDrop : undefined}
       >
         {data.url ? (
           <div
@@ -493,10 +536,23 @@ export function MediaNode({
               </div>
             ) : (
               <>
+                {/* Drop zone overlay */}
+                {isDragOver && (
+                  <div className="absolute inset-0 z-10 rounded-3xl flex items-center justify-center pointer-events-none">
+                    <div className={`flex flex-col items-center gap-2 ${isLight ? "text-black/50" : "text-white/50"}`}>
+                      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                        <polyline points="17 8 12 3 7 8" />
+                        <line x1="12" y1="3" x2="12" y2="15" />
+                      </svg>
+                      <span className="text-[13px] font-medium">Drop to upload</span>
+                    </div>
+                  </div>
+                )}
                 {/* Upload Button */}
                 <button
                   onClick={() => fileInputRef.current?.click()}
-                  className={`flex flex-col items-center justify-center gap-3 transition-all w-[130px] h-[160px] rounded-2xl nodrag ${isLight ? "text-black/30 hover:text-black/70 hover:bg-black/5" : "text-white/40 hover:bg-white/5"}`}
+                  className={`flex flex-col items-center justify-center gap-3 transition-all w-[130px] h-[160px] rounded-2xl nodrag ${isDragOver ? "opacity-0" : ""} ${isLight ? "text-black/30 hover:text-black/70 hover:bg-black/5" : "text-white/40 hover:bg-white/5"}`}
                 >
                   <div
                     className={`w-12 h-12 rounded-xl flex items-center justify-center transition-all ${isLight ? "bg-black/5" : "bg-transparent"}`}
@@ -525,7 +581,7 @@ export function MediaNode({
 
                 {/* Select Asset Button */}
                 <button
-                  className={`flex flex-col items-center justify-center gap-3 transition-all w-[130px] h-[160px] rounded-2xl ${isLight ? "text-black/30 hover:text-black/70 hover:bg-black/5" : "text-white/40 hover:bg-white/5"}`}
+                  className={`flex flex-col items-center justify-center gap-3 transition-all w-[130px] h-[160px] rounded-2xl ${isDragOver ? "opacity-0" : ""} ${isLight ? "text-black/30 hover:text-black/70 hover:bg-black/5" : "text-white/40 hover:bg-white/5"}`}
                 >
                   <div
                     className={`w-12 h-12 rounded-xl flex items-center justify-center transition-all ${isLight ? "bg-black/5" : "bg-transparent"}`}
