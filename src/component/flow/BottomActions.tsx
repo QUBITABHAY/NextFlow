@@ -4,10 +4,30 @@ import { useTheme } from "@/hooks/useTheme";
 import { paletteItems } from "./constants";
 import { PaletteItem } from "./types";
 
-export function BottomActions() {
-  const [isMenuOpen, setIsMenuOpen] = useState(false);
+export function BottomActions({
+  externalOpen,
+  onExternalOpenChange,
+  dropPosition,
+}: {
+  externalOpen?: boolean;
+  onExternalOpenChange?: (open: boolean) => void;
+  dropPosition?: { x: number; y: number } | null;
+} = {}) {
+  const [internalOpen, setInternalOpen] = useState(false);
+  const isMenuOpen = externalOpen ?? internalOpen;
+  const setIsMenuOpen = (open: boolean) => {
+    setInternalOpen(open);
+    onExternalOpenChange?.(open);
+  };
   const [query, setQuery] = useState("");
   const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (externalOpen) {
+      setInternalOpen(true);
+      setQuery("");
+    }
+  }, [externalOpen]);
 
   const addNode = useFlowStore((state) => state.addNode);
   const interactionMode = useFlowStore((state) => state.interactionMode);
@@ -63,7 +83,7 @@ export function BottomActions() {
 
   const handleAdd = (item: PaletteItem) => {
     if (addNode) {
-      addNode(item);
+      addNode(item, dropPosition ?? undefined);
     }
     const newRecent = [
       item,

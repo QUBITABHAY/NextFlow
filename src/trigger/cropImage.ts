@@ -1,4 +1,5 @@
 import { logger, task } from "@trigger.dev/sdk/v3";
+import { Transloadit } from "transloadit";
 import { exec } from "child_process";
 import { promisify } from "util";
 import fs from "fs";
@@ -113,17 +114,69 @@ export const cropImage = task({
       if (!fs.existsSync(outputPath)) {
         throw new Error("ffmpeg did not produce output file");
       }
-      const outputBuffer = fs.readFileSync(outputPath);
-      const base64 = outputBuffer.toString("base64");
-      const dataUrl = `data:image/png;base64,${base64}`;
 
-      logger.info("Crop completed successfully", {
-        outputSize: outputBuffer.length,
+      const outputSize = fs.statSync(outputPath).size;
+      logger.info("Crop completed, uploading to Transloadit...", {
+        outputSize,
       });
+
+      const authKey = process.env.NEXT_PUBLIC_TRANSLOADIT_KEY;
+      const authSecret = process.env.TRANSLOADIT_SECRET;
+
+      if (!authKey || !authSecret) {
+        throw new Error(
+          "Transloadit credentials not configured. Set NEXT_PUBLIC_TRANSLOADIT_KEY and TRANSLOADIT_SECRET.",
+        );
+      }
+
+      const transloadit = new Transloadit({ authKey, authSecret });
+
+      const assembly = await transloadit.createAssembly({
+        files: { file: outputPath },
+        params: {
+          steps: {
+            ":original": { robot: "/upload/handle" },
+          },
+        },
+        waitForCompletion: true,
+      });
+
+      logger.info("Transloadit assembly response", {
+        ok: assembly.ok,
+        status: assembly.assembly_ssl_url,
+        resultsKeys: Object.keys(assembly.results ?? {}),
+        uploadsCount: assembly.uploads?.length,
+        firstUpload: assembly.uploads?.[0]
+          ? {
+              ssl_url: assembly.uploads[0].ssl_url,
+              url: assembly.uploads[0].url,
+            }
+          : null,
+        firstResult: assembly.results?.[":original"]?.[0]
+          ? {
+              ssl_url: assembly.results[":original"][0].ssl_url,
+              url: assembly.results[":original"][0].url,
+            }
+          : null,
+      });
+
+      const uploadedUrl =
+        assembly.results?.[":original"]?.[0]?.ssl_url ??
+        assembly.results?.[":original"]?.[0]?.url ??
+        assembly.uploads?.[0]?.ssl_url ??
+        assembly.uploads?.[0]?.url;
+
+      if (!uploadedUrl) {
+        throw new Error(
+          `Transloadit assembly completed but no URL found. Status: ${assembly.ok}, keys: ${JSON.stringify(Object.keys(assembly))}`,
+        );
+      }
+
+      logger.info("Uploaded to Transloadit", { url: uploadedUrl });
 
       return {
         success: true,
-        result: dataUrl,
+        result: uploadedUrl,
         timestamp: new Date().toISOString(),
       };
     } catch (error: any) {

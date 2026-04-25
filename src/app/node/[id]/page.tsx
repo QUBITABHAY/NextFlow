@@ -62,6 +62,9 @@ function WorkflowBuilder({ workflowId }: { workflowId: string }) {
   const { isLight } = useTheme();
   const { screenToFlowPosition } = useReactFlow();
 
+  const [contextMenuOpen, setContextMenuOpen] = useState(false);
+  const [contextMenuFlowPos, setContextMenuFlowPos] = useState<{ x: number; y: number } | null>(null);
+
   // --- Load workflow on mount ---
   useEffect(() => {
     async function load() {
@@ -146,6 +149,16 @@ function WorkflowBuilder({ workflowId }: { workflowId: string }) {
     [screenToFlowPosition, addNode]
   );
 
+  const onPaneContextMenu = useCallback(
+    (event: React.MouseEvent) => {
+      event.preventDefault();
+      const flowPos = screenToFlowPosition({ x: event.clientX, y: event.clientY });
+      setContextMenuFlowPos(flowPos);
+      setContextMenuOpen(true);
+    },
+    [screenToFlowPosition],
+  );
+
   const nodeTypes = useMemo(
     () => ({
       workflowCard: WorkflowCardNode,
@@ -187,6 +200,8 @@ function WorkflowBuilder({ workflowId }: { workflowId: string }) {
           isValidConnection={isValidConnection}
           onDragOver={onDragOver}
           onDrop={onDrop}
+          onPaneClick={() => { setContextMenuOpen(false); setContextMenuFlowPos(null); }}
+          onPaneContextMenu={onPaneContextMenu}
           panOnDrag={interactionMode === "pan"}
           selectionOnDrag={interactionMode === "select"}
           selectionMode={SelectionMode.Partial}
@@ -226,7 +241,14 @@ function WorkflowBuilder({ workflowId }: { workflowId: string }) {
           <SelectionOverlay />
         </ReactFlow>
 
-        <BottomActions />
+        <BottomActions
+          externalOpen={contextMenuOpen}
+          onExternalOpenChange={(open) => {
+            setContextMenuOpen(open);
+            if (!open) setContextMenuFlowPos(null);
+          }}
+          dropPosition={contextMenuFlowPos}
+        />
       </main>
 
       <HistorySidebar open={historyOpen} onClose={() => setHistoryOpen(false)} />
