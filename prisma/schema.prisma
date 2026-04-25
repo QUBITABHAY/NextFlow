@@ -29,5 +29,40 @@ model Workflow {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
+  runs        WorkflowRun[]
+
   @@index([userId])
+}
+
+model WorkflowRun {
+  id         String    @id @default(cuid())
+  workflowId String
+  workflow   Workflow   @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  scope      String    // "full" | "single" | "partial"
+  status     String    @default("running") // "running" | "success" | "failed" | "partial"
+  startedAt  DateTime  @default(now())
+  finishedAt DateTime?
+  durationMs Int?
+  error      String?
+  nodeRuns   NodeRun[]
+
+  @@index([workflowId])
+}
+
+model NodeRun {
+  id            String      @id @default(cuid())
+  workflowRunId String
+  workflowRun   WorkflowRun @relation(fields: [workflowRunId], references: [id], onDelete: Cascade)
+  nodeId        String
+  nodeType      String
+  nodeLabel     String
+  status        String      @default("running") // "running" | "success" | "failed"
+  startedAt     DateTime    @default(now())
+  finishedAt    DateTime?
+  durationMs    Int?
+  input         String?
+  output        String?
+  error         String?
+
+  @@index([workflowRunId])
 }
