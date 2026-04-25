@@ -15,7 +15,13 @@ import {
 } from "@xyflow/react";
 import { PaletteItem } from "@/component/flow/types";
 import { getStrokeColor } from "@/component/flow/constants";
-import { executeWorkflow } from "@/lib/workflowExecutor";
+import { executeWorkflow, type RunTracker } from "@/lib/workflowExecutor";
+import {
+  createWorkflowRun,
+  createNodeRun,
+  finishNodeRun,
+  finishWorkflowRun,
+} from "@/app/runActions";
 
 type Snapshot = { nodes: Node[]; edges: Edge[] };
 
@@ -52,8 +58,16 @@ export type FlowState = {
   setEdges: (edges: Edge[]) => void;
   setInteractionMode: (mode: "pan" | "select") => void;
   setCollapsed: (collapsed: boolean | ((prev: boolean) => boolean)) => void;
-  addNode: (item: PaletteItem) => void;
+  addNode: (item: PaletteItem, position?: { x: number; y: number }) => void;
   updateNodeData: (nodeId: string, newData: any) => void;
+
+  // Workflow identity
+  workflowId: string | null;
+  setWorkflowId: (id: string) => void;
+
+  // History sidebar
+  historyOpen: boolean;
+  setHistoryOpen: (open: boolean | ((prev: boolean) => boolean)) => void;
 
   // Workflow execution
   isWorkflowRunning: boolean;
@@ -85,6 +99,15 @@ export const useFlowStore = create<FlowState>((set, get) => ({
   future: [],
   canUndo: false,
   canRedo: false,
+
+  workflowId: null,
+  setWorkflowId: (id: string) => set({ workflowId: id }),
+
+  historyOpen: false,
+  setHistoryOpen: (open) =>
+    set((state) => ({
+      historyOpen: typeof open === "function" ? open(state.historyOpen) : open,
+    })),
 
   isWorkflowRunning: false,
   workflowError: null,
@@ -203,13 +226,13 @@ export const useFlowStore = create<FlowState>((set, get) => ({
     }));
   },
 
-  addNode: (item: PaletteItem) => {
+  addNode: (item: PaletteItem, position?: { x: number; y: number }) => {
     pushHistory(get, set);
 
     const nodes = get().nodes;
     const next = nodes.length + 1;
-    const x = 320 + (next % 3) * 340;
-    const y = 380 + Math.floor(next / 3) * 60;
+    const x = position?.x ?? 320 + (next % 3) * 340;
+    const y = position?.y ?? 380 + Math.floor(next / 3) * 60;
 
     let newNodeData: any = {};
     let nodeType = "workflowCard";
@@ -248,6 +271,13 @@ export const useFlowStore = create<FlowState>((set, get) => ({
         frameTimestamp: 0,
         frameTimestampMode: "seconds",
       };
+    } else if (item.model === "LLM Call") {
+      nodeType = "llmNode";
+      newNodeData = {
+        systemPrompt: "",
+        userMessage: "",
+        selectedModel: "gemini-2.0-flash",
+      };
     } else {
       newNodeData = {
         title: item.label,
@@ -285,11 +315,36 @@ export const useFlowStore = create<FlowState>((set, get) => ({
   },
 
   runWorkflow: async () => {
-    const { nodes, edges, isWorkflowRunning } = get();
+    const { nodes, edges, isWorkflowRunning, workflowId } = get();
     if (isWorkflowRunning) return;
 
     const abort = new AbortController();
     set({ isWorkflowRunning: true, workflowError: null, workflowAbort: abort });
+
+    // Create run record if we have a workflowId
+    let runId: string | undefined;
+    let tracker: RunTracker | undefined;
+    const startTime = Date.now();
+
+    if (workflowId) {
+      try {
+        runId = await createWorkflowRun(workflowId, "full");
+        tracker = {
+          onNodeStart: (nodeId, nodeType, nodeLabel, input) =>
+            createNodeRun(runId!, nodeId, nodeType, nodeLabel, input),
+          onNodeFinish: (nodeRunId, success, durationMs, output, error) =>
+            finishNodeRun(
+              nodeRunId,
+              success ? "success" : "failed",
+              durationMs,
+              output,
+              error,
+            ),
+        };
+      } catch (e) {
+        console.error("[NextFlow] Failed to create run record:", e);
+      }
+    }
 
     const result = await executeWorkflow(
       nodes,
@@ -303,7 +358,23 @@ export const useFlowStore = create<FlowState>((set, get) => ({
       },
       () => get().nodes,
       abort.signal,
+      tracker,
     );
+
+    // Finish the run record
+    if (runId) {
+      const duration = Date.now() - startTime;
+      const status = result.success
+        ? "success"
+        : result.partial
+          ? "partial"
+          : "failed";
+      try {
+        await finishWorkflowRun(runId, status, duration, result.error);
+      } catch (e) {
+        console.error("[NextFlow] Failed to finish run record:", e);
+      }
+    }
 
     set({
       isWorkflowRunning: false,
@@ -315,6 +386,10 @@ export const useFlowStore = create<FlowState>((set, get) => ({
   stopWorkflow: () => {
     const { workflowAbort } = get();
     workflowAbort?.abort();
-    set({ isWorkflowRunning: false, workflowError: "Workflow stopped by user.", workflowAbort: null });
+    set({
+      isWorkflowRunning: false,
+      workflowError: "Workflow stopped by user.",
+      workflowAbort: null,
+    });
   },
 }));

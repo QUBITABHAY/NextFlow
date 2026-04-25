@@ -3,6 +3,22 @@ import { triggerNodeAction } from "@/app/actions";
 
 type UpdateNodeData = (nodeId: string, data: any) => void;
 
+export type RunTracker = {
+  onNodeStart: (
+    nodeId: string,
+    nodeType: string,
+    nodeLabel: string,
+    input: string,
+  ) => Promise<string>; // returns nodeRunId
+  onNodeFinish: (
+    nodeRunId: string,
+    success: boolean,
+    durationMs: number,
+    output?: string,
+    error?: string,
+  ) => Promise<void>;
+};
+
 /**
  * Detect if the graph has a cycle (i.e. is NOT a valid DAG).
  * Uses Kahn's algorithm — if we can't consume all executable nodes, there's a cycle.
@@ -10,7 +26,7 @@ type UpdateNodeData = (nodeId: string, data: any) => void;
 export function detectCycle(nodes: Node[], edges: Edge[]): string[] | null {
   const executableIds = new Set(
     nodes
-      .filter((n) => n.type === "workflowCard" && hasInput(n, edges))
+      .filter((n) => isExecutableNode(n) && hasInput(n, edges))
       .map((n) => n.id),
   );
 
@@ -55,14 +71,21 @@ export function detectCycle(nodes: Node[], edges: Edge[]): string[] | null {
   return null;
 }
 
+/** Node types that are executable in the workflow */
+function isExecutableNode(node: Node): boolean {
+  return node.type === "workflowCard" || node.type === "llmNode";
+}
+
 /**
- * Check if a workflowCard node has any real input:
+ * Check if an executable node has any real input:
  * - at least one incoming edge (from any node type), OR
- * - an uploaded file (uploadedImageUrl / uploadedVideoUrl)
+ * - an uploaded file (uploadedImageUrl / uploadedVideoUrl), OR
+ * - for LLM nodes: has a userMessage typed in
  */
 function hasInput(node: Node, edges: Edge[]): boolean {
   const data = node.data as any;
   if (data.uploadedImageUrl || data.uploadedVideoUrl) return true;
+  if (node.type === "llmNode" && data.userMessage) return true;
   return edges.some((e) => e.target === node.id);
 }
 
@@ -74,7 +97,7 @@ function hasInput(node: Node, edges: Edge[]): boolean {
 export function getExecutionLevels(nodes: Node[], edges: Edge[]): string[][] {
   const executableIds = new Set(
     nodes
-      .filter((n) => n.type === "workflowCard" && hasInput(n, edges))
+      .filter((n) => isExecutableNode(n) && hasInput(n, edges))
       .map((n) => n.id),
   );
 
@@ -141,12 +164,14 @@ function collectNodeInputs(
   });
 
   // Combine text prompts
-  const combinedPrompt =
+  let combinedPrompt =
     connectedInputs
       .filter((input) => input.nodeType === "textNode")
       .map((input) => (input.data as any)?.text)
       .filter(Boolean)
-      .join("\n") || nodeData.prompt || "";
+      .join("\n") ||
+    nodeData.prompt ||
+    "";
 
   // Collect media URLs from mediaNodes
   const mediaInputs = connectedInputs
@@ -155,7 +180,7 @@ function collectNodeInputs(
     )
     .map((input) => (input.data as any)?.url);
 
-  // Collect outputs from connected workflowCard nodes
+  // Collect outputs from connected workflowCard nodes (media results)
   connectedInputs
     .filter((input) => {
       const result = (input.data as any)?.runResult;
@@ -166,6 +191,18 @@ function collectNodeInputs(
       );
     })
     .forEach((input) => mediaInputs.push((input.data as any).runResult));
+
+  // Collect text outputs from connected llmNode nodes (append to prompt)
+  const llmTextOutputs = connectedInputs
+    .filter((input) => {
+      const result = (input.data as any)?.runResult;
+      return input.nodeType === "llmNode" && result;
+    })
+    .map((input) => (input.data as any).runResult);
+  if (llmTextOutputs.length > 0) {
+    const llmText = llmTextOutputs.join("\n");
+    combinedPrompt = combinedPrompt ? `${combinedPrompt}\n${llmText}` : llmText;
+  }
 
   // Add uploaded files
   const isCropNode = nodeData.model === "Crop Image";
@@ -190,6 +227,19 @@ function collectNodeInputs(
     extra.frameTimestampMode = nodeData.frameTimestampMode ?? "seconds";
   }
 
+  // LLM node specifics
+  if (node.type === "llmNode") {
+    extra.systemPrompt = nodeData.systemPrompt || "";
+    extra.userMessage = nodeData.userMessage || "";
+    extra.selectedModel = nodeData.selectedModel || "gemini-2.0-flash";
+    // If text nodes are connected, append to user message
+    if (combinedPrompt && !nodeData.userMessage) {
+      extra.userMessage = combinedPrompt;
+    } else if (combinedPrompt && nodeData.userMessage) {
+      extra.userMessage = `${nodeData.userMessage}\n\n${combinedPrompt}`;
+    }
+  }
+
   return { prompt: combinedPrompt, media: mediaInputs, extra };
 }
 
@@ -201,21 +251,47 @@ async function executeNode(
   nodes: Node[],
   edges: Edge[],
   updateNodeData: UpdateNodeData,
+  tracker?: RunTracker,
 ): Promise<boolean> {
   const node = nodes.find((n) => n.id === nodeId);
   if (!node) return false;
 
   const nodeData = node.data as any;
-  updateNodeData(nodeId, { isRunning: true, runResult: null, inputBadge: undefined });
+  updateNodeData(nodeId, {
+    isRunning: true,
+    runResult: null,
+    inputBadge: undefined,
+  });
 
   const { prompt, media, extra } = collectNodeInputs(nodeId, nodes, edges);
 
-  try {
-    const response = await triggerNodeAction(
+  // Determine the node type string for routing in triggerNodeAction
+  const nodeTypeLabel =
+    node.type === "llmNode" ? "LLM Call" : nodeData.model || "WorkflowNode";
+
+  const nodeLabel =
+    node.type === "llmNode" ? "LLM Call" : nodeData.title || nodeTypeLabel;
+  const inputSummary = [prompt, ...media].filter(Boolean).join(" | ");
+
+  let nodeRunId: string | undefined;
+  const startTime = Date.now();
+  if (tracker) {
+    nodeRunId = await tracker.onNodeStart(
       nodeId,
-      nodeData.model || "WorkflowNode",
-      { prompt, media, ...extra },
+      nodeTypeLabel,
+      nodeLabel,
+      inputSummary,
     );
+  }
+
+  try {
+    const response = await triggerNodeAction(nodeId, nodeTypeLabel, {
+      prompt,
+      media,
+      ...extra,
+    });
+
+    const duration = Date.now() - startTime;
 
     if (response.success) {
       updateNodeData(nodeId, {
@@ -223,6 +299,14 @@ async function executeNode(
         runResult: response.runResult,
         inputBadge: "Success",
       });
+      if (tracker && nodeRunId) {
+        await tracker.onNodeFinish(
+          nodeRunId,
+          true,
+          duration,
+          response.runResult,
+        );
+      }
       return true;
     } else {
       updateNodeData(nodeId, {
@@ -230,14 +314,33 @@ async function executeNode(
         runResult: response.error || "Task failed",
         inputBadge: "Failed",
       });
+      if (tracker && nodeRunId) {
+        await tracker.onNodeFinish(
+          nodeRunId,
+          false,
+          duration,
+          undefined,
+          response.error || "Task failed",
+        );
+      }
       return false;
     }
   } catch (err: any) {
+    const duration = Date.now() - startTime;
     updateNodeData(nodeId, {
       isRunning: false,
       runResult: err.message || "Unexpected error",
       inputBadge: "Failed",
     });
+    if (tracker && nodeRunId) {
+      await tracker.onNodeFinish(
+        nodeRunId,
+        false,
+        duration,
+        undefined,
+        err.message || "Unexpected error",
+      );
+    }
     return false;
   }
 }
@@ -256,7 +359,8 @@ export async function executeWorkflow(
   updateNodeData: UpdateNodeData,
   getLatestNodes: () => Node[],
   abortSignal?: AbortSignal,
-): Promise<{ success: boolean; error?: string }> {
+  tracker?: RunTracker,
+): Promise<{ success: boolean; error?: string; partial?: boolean }> {
   // 1. Validate DAG
   const cycleNodes = detectCycle(nodes, edges);
   if (cycleNodes) {
@@ -273,15 +377,20 @@ export async function executeWorkflow(
   }
 
   // 3. Execute level by level
+  let completedLevels = 0;
   for (const level of levels) {
     if (abortSignal?.aborted) {
-      return { success: false, error: "Workflow execution was stopped." };
+      return {
+        success: false,
+        partial: completedLevels > 0,
+        error: "Workflow execution was stopped.",
+      };
     }
 
     // Run all nodes in this level in parallel
     const results = await Promise.all(
       level.map((nodeId) =>
-        executeNode(nodeId, getLatestNodes(), edges, updateNodeData),
+        executeNode(nodeId, getLatestNodes(), edges, updateNodeData, tracker),
       ),
     );
 
@@ -290,9 +399,11 @@ export async function executeWorkflow(
     if (failedCount > 0) {
       return {
         success: false,
+        partial: completedLevels > 0,
         error: `${failedCount} node(s) failed in execution. Check individual nodes for details.`,
       };
     }
+    completedLevels++;
   }
 
   return { success: true };
