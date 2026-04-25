@@ -37,7 +37,7 @@ function createSnapshot(nodes: Node[], edges: Edge[]): Snapshot {
 export type FlowState = {
   nodes: Node[];
   edges: Edge[];
-  interactionMode: "pan" | "select";
+  interactionMode: "pan" | "select" | "add" | "cut";
   collapsed: boolean;
   theme: "light" | "dark";
 
@@ -56,14 +56,16 @@ export type FlowState = {
   onReconnect: (oldEdge: Edge, newConnection: Connection) => void;
   setNodes: (nodes: Node[]) => void;
   setEdges: (edges: Edge[]) => void;
-  setInteractionMode: (mode: "pan" | "select") => void;
+  setInteractionMode: (mode: "pan" | "select" | "add" | "cut") => void;
   setCollapsed: (collapsed: boolean | ((prev: boolean) => boolean)) => void;
   addNode: (item: PaletteItem, position?: { x: number; y: number }) => void;
   updateNodeData: (nodeId: string, newData: any) => void;
 
   // Workflow identity
   workflowId: string | null;
+  workflowTitle: string;
   setWorkflowId: (id: string) => void;
+  setWorkflowTitle: (title: string) => void;
 
   // History sidebar
   historyOpen: boolean;
@@ -74,7 +76,17 @@ export type FlowState = {
   workflowError: string | null;
   workflowAbort: AbortController | null;
   runWorkflow: () => Promise<void>;
+  runSelectedNodes: () => Promise<void>;
   stopWorkflow: () => void;
+
+  // Selection actions
+  tidyUpSelectedNodes: () => void;
+  groupSelectedNodes: () => void;
+
+  // Group node actions
+  ungroupNode: (groupId: string) => void;
+  changeGroupColor: (groupId: string, color: string) => void;
+  runGroupNodes: (groupId: string) => Promise<void>;
 };
 
 /** Push the current state into the past stack, clear future. */
@@ -101,7 +113,9 @@ export const useFlowStore = create<FlowState>((set, get) => ({
   canRedo: false,
 
   workflowId: null,
+  workflowTitle: "Untitled",
   setWorkflowId: (id: string) => set({ workflowId: id }),
+  setWorkflowTitle: (title: string) => set({ workflowTitle: title }),
 
   historyOpen: false,
   setHistoryOpen: (open) =>
@@ -213,7 +227,7 @@ export const useFlowStore = create<FlowState>((set, get) => ({
     set({ edges });
   },
 
-  setInteractionMode: (interactionMode: "pan" | "select") => {
+  setInteractionMode: (interactionMode: "pan" | "select" | "add" | "cut") => {
     set({ interactionMode });
   },
 
@@ -383,12 +397,339 @@ export const useFlowStore = create<FlowState>((set, get) => ({
     });
   },
 
+  runSelectedNodes: async () => {
+    const { nodes, edges, isWorkflowRunning, workflowId } = get();
+    if (isWorkflowRunning) return;
+
+    const selectedIds = new Set(nodes.filter((n) => n.selected).map((n) => n.id));
+    if (selectedIds.size === 0) return;
+
+    // Include selected nodes + any non-executable source nodes they depend on (text, media)
+    const relevantIds = new Set(selectedIds);
+    for (const edge of edges) {
+      if (selectedIds.has(edge.target)) {
+        relevantIds.add(edge.source);
+      }
+    }
+
+    const filteredNodes = nodes.filter((n) => relevantIds.has(n.id));
+    const filteredEdges = edges.filter(
+      (e) => relevantIds.has(e.source) && relevantIds.has(e.target),
+    );
+
+    const abort = new AbortController();
+    set({ isWorkflowRunning: true, workflowError: null, workflowAbort: abort });
+
+    let runId: string | undefined;
+    let tracker: RunTracker | undefined;
+    const startTime = Date.now();
+
+    if (workflowId) {
+      try {
+        runId = await createWorkflowRun(workflowId, "partial");
+        tracker = {
+          onNodeStart: (nodeId, nodeType, nodeLabel, input) =>
+            createNodeRun(runId!, nodeId, nodeType, nodeLabel, input),
+          onNodeFinish: (nodeRunId, success, durationMs, output, error) =>
+            finishNodeRun(
+              nodeRunId,
+              success ? "success" : "failed",
+              durationMs,
+              output,
+              error,
+            ),
+        };
+      } catch (e) {
+        console.error("[NextFlow] Failed to create run record:", e);
+      }
+    }
+
+    const result = await executeWorkflow(
+      filteredNodes,
+      filteredEdges,
+      (nodeId, newData) => {
+        set((state) => ({
+          nodes: state.nodes.map((n) =>
+            n.id === nodeId ? { ...n, data: { ...n.data, ...newData } } : n,
+          ),
+        }));
+      },
+      () => {
+        const all = get().nodes;
+        return all.filter((n) => relevantIds.has(n.id));
+      },
+      abort.signal,
+      tracker,
+    );
+
+    if (runId) {
+      const duration = Date.now() - startTime;
+      const status = result.success
+        ? "success"
+        : result.partial
+          ? "partial"
+          : "failed";
+      try {
+        await finishWorkflowRun(runId, status, duration, result.error);
+      } catch (e) {
+        console.error("[NextFlow] Failed to finish run record:", e);
+      }
+    }
+
+    set({
+      isWorkflowRunning: false,
+      workflowError: result.success ? null : (result.error ?? "Unknown error"),
+      workflowAbort: null,
+    });
+  },
+
   stopWorkflow: () => {
     const { workflowAbort } = get();
     workflowAbort?.abort();
     set({
       isWorkflowRunning: false,
       workflowError: "Workflow stopped by user.",
+      workflowAbort: null,
+    });
+  },
+
+  tidyUpSelectedNodes: () => {
+    const { nodes } = get();
+    const selected = nodes.filter((n) => n.selected);
+    if (selected.length < 2) return;
+
+    pushHistory(get, set);
+
+    // Sort selected nodes top-to-bottom, left-to-right
+    const sorted = [...selected].sort((a, b) =>
+      a.position.y !== b.position.y
+        ? a.position.y - b.position.y
+        : a.position.x - b.position.x,
+    );
+
+    // Grid layout: arrange in rows
+    const cols = Math.ceil(Math.sqrt(sorted.length));
+    const gapX = 400;
+    const gapY = 300;
+
+    // Use the top-left of the current bounding box as the anchor
+    const anchorX = Math.min(...sorted.map((n) => n.position.x));
+    const anchorY = Math.min(...sorted.map((n) => n.position.y));
+
+    const movedIds = new Map<string, { x: number; y: number }>();
+    sorted.forEach((node, i) => {
+      const col = i % cols;
+      const row = Math.floor(i / cols);
+      movedIds.set(node.id, {
+        x: anchorX + col * gapX,
+        y: anchorY + row * gapY,
+      });
+    });
+
+    set({
+      nodes: nodes.map((n) => {
+        const newPos = movedIds.get(n.id);
+        return newPos ? { ...n, position: newPos } : n;
+      }),
+    });
+  },
+
+  groupSelectedNodes: () => {
+    const { nodes } = get();
+    const selected = nodes.filter((n) => n.selected && n.type !== "groupNode");
+    if (selected.length < 2) return;
+
+    pushHistory(get, set);
+
+    // Random pastel-ish color
+    const GROUP_COLORS = [
+      "#a855f7", "#3b82f6", "#ef4444", "#22c55e",
+      "#f59e0b", "#ec4899", "#06b6d4", "#8b5cf6",
+      "#14b8a6", "#f97316",
+    ];
+    const color =
+      GROUP_COLORS[Math.floor(Math.random() * GROUP_COLORS.length)];
+
+    // Count existing groups for naming
+    const groupCount = nodes.filter((n) => n.type === "groupNode").length;
+
+    // Compute bounding box of selected nodes
+    const PAD = 40;
+    const LABEL_HEIGHT = 30;
+    let minX = Infinity,
+      minY = Infinity,
+      maxX = -Infinity,
+      maxY = -Infinity;
+
+    for (const n of selected) {
+      const w = n.measured?.width ?? (n.width as number) ?? 200;
+      const h = n.measured?.height ?? (n.height as number) ?? 100;
+      minX = Math.min(minX, n.position.x);
+      minY = Math.min(minY, n.position.y);
+      maxX = Math.max(maxX, n.position.x + w);
+      maxY = Math.max(maxY, n.position.y + h);
+    }
+
+    const groupX = minX - PAD;
+    const groupY = minY - PAD - LABEL_HEIGHT;
+    const groupW = maxX - minX + PAD * 2;
+    const groupH = maxY - minY + PAD * 2 + LABEL_HEIGHT;
+
+    const groupId = `group-${Date.now()}`;
+
+    // Create the group node
+    const groupNode: Node = {
+      id: groupId,
+      type: "groupNode",
+      position: { x: groupX, y: groupY },
+      data: {
+        label: `Group ${groupCount + 1}`,
+        color,
+        width: groupW,
+        height: groupH,
+      },
+      style: { zIndex: -1 },
+    };
+
+    // Reparent selected nodes under the group — positions become relative
+    const updatedNodes = nodes.map((n) => {
+      if (!n.selected || n.type === "groupNode") return n;
+      return {
+        ...n,
+        parentId: groupId,
+        extent: "parent" as const,
+        position: {
+          x: n.position.x - groupX,
+          y: n.position.y - groupY,
+        },
+        selected: false,
+      };
+    });
+
+    // Group node must come BEFORE its children in the array
+    set({ nodes: [groupNode, ...updatedNodes] });
+  },
+
+  ungroupNode: (groupId: string) => {
+    const { nodes } = get();
+    const groupNode = nodes.find((n) => n.id === groupId);
+    if (!groupNode) return;
+
+    pushHistory(get, set);
+
+    const groupX = groupNode.position.x;
+    const groupY = groupNode.position.y;
+
+    // Convert children back to absolute positions and remove parentId
+    const updatedNodes = nodes
+      .filter((n) => n.id !== groupId)
+      .map((n) => {
+        if (n.parentId !== groupId) return n;
+        const { parentId, extent, ...rest } = n as any;
+        return {
+          ...rest,
+          position: {
+            x: n.position.x + groupX,
+            y: n.position.y + groupY,
+          },
+        };
+      });
+
+    set({ nodes: updatedNodes });
+  },
+
+  changeGroupColor: (groupId: string, color: string) => {
+    set((state) => ({
+      nodes: state.nodes.map((n) =>
+        n.id === groupId
+          ? { ...n, data: { ...n.data, color } }
+          : n,
+      ),
+    }));
+  },
+
+  runGroupNodes: async (groupId: string) => {
+    const { nodes, edges, isWorkflowRunning, workflowId } = get();
+    if (isWorkflowRunning) return;
+
+    // Find all children of this group
+    const childIds = new Set(
+      nodes.filter((n) => n.parentId === groupId).map((n) => n.id),
+    );
+    if (childIds.size === 0) return;
+
+    // Also include connected input sources (text, media nodes outside the group)
+    const relevantIds = new Set(childIds);
+    for (const edge of edges) {
+      if (childIds.has(edge.target)) {
+        relevantIds.add(edge.source);
+      }
+    }
+
+    const filteredNodes = nodes.filter((n) => relevantIds.has(n.id));
+    const filteredEdges = edges.filter(
+      (e) => relevantIds.has(e.source) && relevantIds.has(e.target),
+    );
+
+    const abort = new AbortController();
+    set({ isWorkflowRunning: true, workflowError: null, workflowAbort: abort });
+
+    let runId: string | undefined;
+    let tracker: RunTracker | undefined;
+    const startTime = Date.now();
+
+    if (workflowId) {
+      try {
+        runId = await createWorkflowRun(workflowId, "partial");
+        tracker = {
+          onNodeStart: (nodeId, nodeType, nodeLabel, input) =>
+            createNodeRun(runId!, nodeId, nodeType, nodeLabel, input),
+          onNodeFinish: (nodeRunId, success, durationMs, output, error) =>
+            finishNodeRun(
+              nodeRunId,
+              success ? "success" : "failed",
+              durationMs,
+              output,
+              error,
+            ),
+        };
+      } catch (e) {
+        console.error("[NextFlow] Failed to create run record:", e);
+      }
+    }
+
+    const result = await executeWorkflow(
+      filteredNodes,
+      filteredEdges,
+      (nodeId, newData) => {
+        set((state) => ({
+          nodes: state.nodes.map((n) =>
+            n.id === nodeId ? { ...n, data: { ...n.data, ...newData } } : n,
+          ),
+        }));
+      },
+      () => get().nodes.filter((n) => relevantIds.has(n.id)),
+      abort.signal,
+      tracker,
+    );
+
+    if (runId) {
+      const duration = Date.now() - startTime;
+      const status = result.success
+        ? "success"
+        : result.partial
+          ? "partial"
+          : "failed";
+      try {
+        await finishWorkflowRun(runId, status, duration, result.error);
+      } catch (e) {
+        console.error("[NextFlow] Failed to finish run record:", e);
+      }
+    }
+
+    set({
+      isWorkflowRunning: false,
+      workflowError: result.success ? null : (result.error ?? "Unknown error"),
       workflowAbort: null,
     });
   },
