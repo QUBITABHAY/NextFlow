@@ -8,6 +8,7 @@ import {
   ReactFlow,
   ReactFlowProvider,
   SelectionMode,
+  useReactFlow,
   type Connection,
   type Edge,
 } from "@xyflow/react";
@@ -16,20 +17,26 @@ import { useFlowStore } from "@/store/useFlowStore";
 import { WorkflowCardNode } from "@/component/flow/WorkflowCardNode";
 import { TextNode } from "@/component/flow/TextNode";
 import { MediaNode } from "@/component/flow/MediaNode";
+import { LLMNode } from "@/component/flow/LLMNode";
 import { CustomEdge } from "@/component/flow/CustomEdge";
-import { paletteItems, isSameColorFamily } from "@/component/flow/constants";
+import { isSameColorFamily } from "@/component/flow/constants";
 import { useTheme } from "@/hooks/useTheme";
-import { Dock } from "@/component/flow/Dock";
-import { SidePanel } from "@/component/flow/SidePanel";
+import { Sidebar } from "@/component/Sidebar";
 import { TopActions } from "@/component/flow/TopActions";
 import { BottomActions } from "@/component/flow/BottomActions";
 import { SelectionOverlay } from "@/component/flow/SelectionOverlay";
+import { HistorySidebar } from "@/component/flow/HistorySidebar";
 
 // Auto-save debounce: 1.5s after last change
 const AUTOSAVE_DELAY = 1500;
 
 function WorkflowBuilder({ workflowId }: { workflowId: string }) {
-  const [query, setQuery] = useState("");
+  const setWorkflowId = useFlowStore((state) => state.setWorkflowId);
+
+  useEffect(() => {
+    setWorkflowId(workflowId);
+  }, [workflowId, setWorkflowId]);
+
   const [saveStatus, setSaveStatus] = useState<
     "idle" | "saving" | "saved" | "error"
   >("idle");
@@ -44,16 +51,16 @@ function WorkflowBuilder({ workflowId }: { workflowId: string }) {
     onConnect,
     onReconnect,
     interactionMode,
-    setInteractionMode,
     addNode,
     collapsed,
-    setCollapsed,
     setNodes,
     setEdges,
-    theme,
+    historyOpen,
+    setHistoryOpen,
   } = useFlowStore();
 
   const { isLight } = useTheme();
+  const { screenToFlowPosition } = useReactFlow();
 
   // --- Load workflow on mount ---
   useEffect(() => {
@@ -65,7 +72,6 @@ function WorkflowBuilder({ workflowId }: { workflowId: string }) {
           if (data.nodes) setNodes(data.nodes);
           if (data.edges) setEdges(data.edges);
         } else if (res.status !== 404) {
-          // 404 = new workflow (blank), anything else is an actual error
           const err = await res.json().catch(() => ({}));
           console.error("[NextFlow] Failed to load workflow:", res.status, err);
         }
@@ -110,18 +116,34 @@ function WorkflowBuilder({ workflowId }: { workflowId: string }) {
     };
   }, [nodes, edges, workflowId]);
 
-  const filteredPalette = useMemo(
-    () =>
-      paletteItems.filter((item) =>
-        item.label.toLowerCase().includes(query.toLowerCase()),
-      ),
-    [query],
-  );
-
   const isValidConnection = useCallback(
     (connection: Connection | Edge) =>
       isSameColorFamily(connection.sourceHandle, connection.targetHandle),
     [],
+  );
+
+  const onDragOver = useCallback((event: React.DragEvent) => {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+  }, []);
+
+  const onDrop = useCallback(
+    (event: React.DragEvent) => {
+      event.preventDefault();
+
+      const type = event.dataTransfer.getData("application/reactflow");
+      const label = event.dataTransfer.getData("application/reactflow-label");
+
+      if (!type) return;
+
+      const position = screenToFlowPosition({
+        x: event.clientX,
+        y: event.clientY,
+      });
+
+      addNode({ label, model: type }, position);
+    },
+    [screenToFlowPosition, addNode]
   );
 
   const nodeTypes = useMemo(
@@ -129,6 +151,7 @@ function WorkflowBuilder({ workflowId }: { workflowId: string }) {
       workflowCard: WorkflowCardNode,
       textNode: TextNode,
       mediaNode: MediaNode,
+      llmNode: LLMNode,
     }),
     [],
   );
@@ -140,23 +163,13 @@ function WorkflowBuilder({ workflowId }: { workflowId: string }) {
     [],
   );
 
-  const leftOffset = collapsed ? "left-[64px]" : "left-[324px]";
+  const leftOffset = collapsed ? "left-[64px]" : "left-[230px]";
 
   return (
     <div
       className={`relative flex h-screen w-full overflow-hidden transition-colors duration-300 ${isLight ? "bg-white text-black" : "bg-[#0e0e0e] text-white"}`}
     >
-      <aside className="relative z-30 flex h-full">
-        <Dock setCollapsed={setCollapsed} />
-        <SidePanel
-          collapsed={collapsed}
-          setCollapsed={setCollapsed}
-          query={query}
-          setQuery={setQuery}
-          filteredPalette={filteredPalette}
-          addNode={addNode}
-        />
-      </aside>
+      <Sidebar onAddNode={(item) => addNode(item)} />
 
       <main className="relative flex-1 overflow-hidden">
         <TopActions leftOffset={leftOffset} />
@@ -172,6 +185,8 @@ function WorkflowBuilder({ workflowId }: { workflowId: string }) {
           onConnect={onConnect}
           onReconnect={onReconnect}
           isValidConnection={isValidConnection}
+          onDragOver={onDragOver}
+          onDrop={onDrop}
           panOnDrag={interactionMode === "pan"}
           selectionOnDrag={interactionMode === "select"}
           selectionMode={SelectionMode.Partial}
@@ -213,6 +228,8 @@ function WorkflowBuilder({ workflowId }: { workflowId: string }) {
 
         <BottomActions />
       </main>
+
+      <HistorySidebar open={historyOpen} onClose={() => setHistoryOpen(false)} />
     </div>
   );
 }

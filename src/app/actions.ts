@@ -4,6 +4,7 @@ import { tasks, runs } from "@trigger.dev/sdk/v3";
 import type { executeNodeAction } from "@/trigger/nodeAction";
 import type { cropImage } from "@/trigger/cropImage";
 import type { extractFrame } from "@/trigger/extractFrame";
+import type { llmCall } from "@/trigger/llmCall";
 
 const TERMINAL_STATUSES = new Set([
   "FAILED",
@@ -142,6 +143,27 @@ export async function triggerNodeAction(
       });
 
       return pollRun(handle.id, "Extract frame task");
+    }
+
+    // LLM Call → dedicated llm-call task
+    if (nodeType === "LLM Call") {
+      if (!inputData?.userMessage && !inputData?.prompt) {
+        return {
+          success: false,
+          runId: "",
+          error: "User message is required. Type a message or connect a Text node.",
+        };
+      }
+
+      const handle = await tasks.trigger<typeof llmCall>("llm-call", {
+        nodeId,
+        systemPrompt: inputData?.systemPrompt || undefined,
+        userMessage: inputData?.userMessage || inputData?.prompt || "",
+        imageUrl: inputData?.media?.[0] || undefined,
+        model: inputData?.selectedModel || "gemini-2.0-flash",
+      });
+
+      return pollRun(handle.id, "LLM call");
     }
 
     // All other nodes → generic execute-node-action task
