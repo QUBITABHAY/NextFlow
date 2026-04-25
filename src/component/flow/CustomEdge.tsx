@@ -3,13 +3,17 @@ import {
   EdgeLabelRenderer,
   getBezierPath,
   useReactFlow,
+  useStore,
   type EdgeProps,
+  type ReactFlowState,
 } from "@xyflow/react";
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { useTheme } from "@/hooks/useTheme";
 
 export function CustomEdge({
   id,
+  source,
+  target,
   sourceX,
   sourceY,
   targetX,
@@ -22,6 +26,14 @@ export function CustomEdge({
   const { setEdges } = useReactFlow();
   const [isHovered, setIsHovered] = useState(false);
   const { isLight } = useTheme();
+
+  const isTargetRunning = useStore(
+    useCallback(
+      (s: ReactFlowState) =>
+        !!(s.nodeLookup.get(target)?.data as any)?.isRunning,
+      [target],
+    ),
+  );
 
   const [edgePath, labelX, labelY] = getBezierPath({
     sourceX,
@@ -37,7 +49,7 @@ export function CustomEdge({
   };
 
   // Determine base color from style.stroke
-  const strokeColor = style.stroke || "#e3c92f";
+  const strokeColor = isTargetRunning ? "#a855f7" : style.stroke || "#e3c92f";
 
   return (
     <>
@@ -57,8 +69,31 @@ export function CustomEdge({
         <BaseEdge
           path={edgePath}
           markerEnd={markerEnd}
-          style={{ ...style, strokeOpacity: isLight ? 0.6 : 0.4 }}
+          style={
+            isTargetRunning
+              ? { stroke: "#a855f7", strokeWidth: 2, strokeOpacity: 0.3 }
+              : { ...style, strokeOpacity: isLight ? 0.6 : 0.4 }
+          }
         />
+        {/* Animated flowing dashes when target is running */}
+        {isTargetRunning && (
+          <path
+            d={edgePath}
+            fill="none"
+            stroke="#a855f7"
+            strokeWidth={2.5}
+            strokeDasharray="8 6"
+            strokeLinecap="round"
+          >
+            <animate
+              attributeName="stroke-dashoffset"
+              from="0"
+              to="-28"
+              dur="0.6s"
+              repeatCount="indefinite"
+            />
+          </path>
+        )}
       </g>
       <EdgeLabelRenderer>
         <div

@@ -368,13 +368,15 @@ export function WorkflowCardNode({
         </span>
       </div>
       <div
-        className={`w-[220px] min-h-[430px] rounded-2xl border text-[11px] relative p-3 transition-all ${isLight ? "bg-white border-black/5 shadow-[0_8px_30px_rgb(0,0,0,0.04)] text-black/80 hover:border-black/10" : "bg-[#202020] border-[#1f1f1f] shadow-[0_22px_50px_rgba(0,0,0,0.45)] text-white/80 hover:border-white/20"} ${data.isRunning ? (isExtractFrameNode ? "node-processing-video" : "node-processing") : ""}`}
+        className={`w-[220px] min-h-[430px] rounded-2xl border text-[11px] relative p-3 transition-all ${isLight ? "bg-white border-black/5 shadow-[0_8px_30px_rgb(0,0,0,0.04)] text-black/80 hover:border-black/10" : "bg-[#202020] border-[#1f1f1f] shadow-[0_22px_50px_rgba(0,0,0,0.45)] text-white/80 hover:border-white/20"} ${data.isRunning ? "node-processing" : ""}`}
         style={{
-          borderColor: selected
-            ? isExtractFrameNode
-              ? "#22c55e"
-              : "#1188ff"
-            : undefined,
+          borderColor: data.isRunning
+            ? undefined
+            : selected
+              ? isExtractFrameNode
+                ? "#22c55e"
+                : "#1188ff"
+              : undefined,
         }}
         onMouseEnter={() => setIsHovering(true)}
         onMouseLeave={() => setIsHovering(false)}
@@ -413,7 +415,7 @@ export function WorkflowCardNode({
           {data.isRunning ? (
             <div className="flex flex-col items-center gap-3">
               <svg
-                className="animate-spin h-6 w-6 text-[#1188ff]"
+                className="animate-spin h-6 w-6 text-[#a855f7]"
                 xmlns="http://www.w3.org/2000/svg"
                 fill="none"
                 viewBox="0 0 24 24"

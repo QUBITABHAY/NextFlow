@@ -18,6 +18,7 @@ export type LLMNodeData = {
   systemPrompt: string;
   userMessage: string;
   selectedModel: string;
+
   isRunning?: boolean;
   runResult?: string | null;
 };
@@ -83,13 +84,15 @@ export function LLMNode({ id, data, selected }: NodeProps<Node<LLMNodeData>>) {
 
       {/* Main Card */}
       <div
-        className={`w-[360px] rounded-2xl transition-all box-border border-2 p-4 ${isLight ? "bg-white shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-black/5" : "bg-[#202020] shadow-2xl border-[#1f1f1f]"}`}
+        className={`w-[360px] rounded-2xl transition-all box-border border-2 p-4 ${isLight ? "bg-white shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-black/5" : "bg-[#202020] shadow-2xl border-[#1f1f1f]"} ${data.isRunning ? "node-processing" : ""}`}
         style={{
-          borderColor: selected
-            ? accentColor
-            : isLight
-              ? "rgba(0,0,0,0.05)"
-              : "rgba(255,255,255,0.0)",
+          borderColor: data.isRunning
+            ? undefined
+            : selected
+              ? accentColor
+              : isLight
+                ? "rgba(0,0,0,0.05)"
+                : "rgba(255,255,255,0.0)",
         }}
       >
         {/* Header Row with Image + Output handles */}
@@ -123,7 +126,7 @@ export function LLMNode({ id, data, selected }: NodeProps<Node<LLMNodeData>>) {
           <div
             className={`flex justify-between items-center text-[13px] font-medium px-1 ${isLight ? "text-black/30" : "text-white/40"}`}
           >
-            <span>Image</span>
+            <span>Image(s)</span>
             <span>Output</span>
           </div>
         </div>
