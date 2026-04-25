@@ -39,7 +39,7 @@ export function TextNode({
 
       {/* Main Card */}
       <div
-        className={`w-[320px] rounded-2xl transition-all box-border border-2 p-4 ${isLight ? "bg-white shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-black/5" : "bg-[#1c1e24] shadow-2xl border-white/0"}`}
+        className={`w-[320px] rounded-2xl transition-all box-border border-2 p-4 ${isLight ? "bg-white shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-black/5" : "bg-[#202020] shadow-2xl border-[#1f1f1f]"}`}
         style={{
           borderColor: selected
             ? "#e3c92f"
@@ -139,7 +139,7 @@ export function TextNode({
 
         {/* Text Area */}
         <textarea
-          className={`w-full h-[120px] rounded-xl border leading-relaxed p-4 text-[15px] outline-none transition-all shadow-inner ${isLight ? "bg-[#f9fafb] border-black/5 text-black/80 focus:bg-white focus:border-black/10" : "bg-black/30 border-white/5 text-white/90 focus:bg-black/40 focus:border-white/20"}`}
+          className={`w-full h-[120px] rounded-xl border leading-relaxed p-4 text-[15px] outline-none transition-all shadow-inner ${isLight ? "bg-[#f9fafb] border-black/5 text-black/80 focus:bg-white focus:border-black/10" : "bg-[#171717] border-[#202020] text-white/90 focus:bg-[#171717] focus:border-[#2a2a2a]"}`}
           value={data.text}
           onChange={(e) => updateNodeData(id, { text: e.target.value })}
           placeholder="Enter prompt text..."

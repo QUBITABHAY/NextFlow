@@ -65,9 +65,8 @@ export function CustomEdge({
           style={{
             position: "absolute",
             transform: `translate(-50%, -50%) translate(${labelX}px,${labelY}px)`,
-            pointerEvents: isHovered ? "all" : "none",
-            opacity: isHovered ? 1 : 0,
-            transition: "opacity 0.2s ease-in-out",
+            pointerEvents: "all",
+            zIndex: 1000,
           }}
           className="nodrag nopan"
           onMouseEnter={() => setIsHovered(true)}
@@ -75,7 +74,11 @@ export function CustomEdge({
         >
           <button
             onClick={onEdgeClick}
-            style={{ backgroundColor: strokeColor }}
+            style={{
+              backgroundColor: strokeColor,
+              opacity: isHovered ? 1 : 0,
+              transition: "opacity 0.2s ease-in-out",
+            }}
             className="w-[22px] h-[22px] flex items-center justify-center rounded-full text-white shadow-lg hover:scale-110 transition-transform"
           >
             <svg

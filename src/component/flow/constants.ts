@@ -5,6 +5,7 @@ export const HANDLE_COLORS = {
   yellow: "#e3c92f",
   blue: "#1188ff",
   green: "#22c55e",
+  purple: "#a855f7",
 } as const;
 
 export function getStrokeColor(handleId: string | null | undefined): string {
@@ -30,6 +31,7 @@ export const paletteItems: PaletteItem[] = [
   { label: "Video Input", model: "Video" },
   { label: "Crop Image", model: "Crop Image" },
   { label: "Extract Frame", model: "Extract Frame" },
+  { label: "LLM Call", model: "LLM Call" },
 ];
 
 export const initialNodes: Node[] = [

@@ -20,6 +20,14 @@ export type WorkflowNodeData = {
   frameTimestampMode?: "seconds" | "percentage";
 };
 
+export type LLMNodeData = {
+  systemPrompt: string;
+  userMessage: string;
+  selectedModel: string;
+  isRunning?: boolean;
+  runResult?: string | null;
+};
+
 export type PaletteItem = {
   label: string;
   model: string;

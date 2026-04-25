@@ -267,7 +267,7 @@ export function MediaNode({
 
       {/* Main Card */}
       <div
-        className={`rounded-3xl transition-all box-border flex items-center justify-evenly relative ${isLight ? "bg-white shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-transparent" : "bg-[#1c1e24] shadow-2xl border-transparent"} ${data.url ? "p-0 w-auto h-auto border-none" : "w-[320px] h-[210px] p-4 border-2"}`}
+        className={`rounded-3xl transition-all box-border flex items-center justify-evenly relative ${isLight ? "bg-white shadow-[0_8px_30px_rgb(0,0,0,0.04)] border-transparent" : "bg-[#202020] shadow-2xl border-transparent"} ${data.url ? "p-0 w-auto h-auto border-none" : "w-[320px] h-[210px] p-4 border-2"}`}
         style={{
           borderColor:
             selected && !data.url
@@ -496,10 +496,10 @@ export function MediaNode({
                 {/* Upload Button */}
                 <button
                   onClick={() => fileInputRef.current?.click()}
-                  className={`flex flex-col items-center justify-center gap-3 transition-all w-[130px] h-[160px] rounded-2xl nodrag ${isLight ? "text-black/30 hover:text-black/70 hover:bg-black/5" : "text-white/40 hover:text-white/80 hover:bg-[#2a2a2a]"}`}
+                  className={`flex flex-col items-center justify-center gap-3 transition-all w-[130px] h-[160px] rounded-2xl nodrag ${isLight ? "text-black/30 hover:text-black/70 hover:bg-black/5" : "text-white/40 hover:bg-white/5"}`}
                 >
                   <div
-                    className={`w-12 h-12 rounded-xl flex items-center justify-center transition-all ${isLight ? "bg-black/5" : "bg-white/5"}`}
+                    className={`w-12 h-12 rounded-xl flex items-center justify-center transition-all ${isLight ? "bg-black/5" : "bg-transparent"}`}
                   >
                     <svg
                       width="24"
@@ -525,10 +525,10 @@ export function MediaNode({
 
                 {/* Select Asset Button */}
                 <button
-                  className={`flex flex-col items-center justify-center gap-3 transition-all w-[130px] h-[160px] rounded-2xl ${isLight ? "text-black/30 hover:text-black/70 hover:bg-black/5" : "text-white/40 hover:text-white/80 hover:bg-[#2a2a2a]"}`}
+                  className={`flex flex-col items-center justify-center gap-3 transition-all w-[130px] h-[160px] rounded-2xl ${isLight ? "text-black/30 hover:text-black/70 hover:bg-black/5" : "text-white/40 hover:bg-white/5"}`}
                 >
                   <div
-                    className={`w-12 h-12 rounded-xl flex items-center justify-center transition-all ${isLight ? "bg-black/5" : "bg-white/5"}`}
+                    className={`w-12 h-12 rounded-xl flex items-center justify-center transition-all ${isLight ? "bg-black/5" : "bg-transparent"}`}
                   >
                     {isImage ? (
                       <svg

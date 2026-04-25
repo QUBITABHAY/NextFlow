@@ -1,4 +1,6 @@
 import { useTheme } from "@/hooks/useTheme";
+import { useFlowStore } from "@/store/useFlowStore";
+import Image from "next/image";
 
 export function Dock({
   setCollapsed,
@@ -6,6 +8,8 @@ export function Dock({
   setCollapsed: (val: boolean | ((prev: boolean) => boolean)) => void;
 }) {
   const { isLight } = useTheme();
+  const historyOpen = useFlowStore((state) => state.historyOpen);
+  const setHistoryOpen = useFlowStore((state) => state.setHistoryOpen);
 
   return (
     <div
@@ -34,12 +38,11 @@ export function Dock({
 
       {/* Home Icon */}
       <button
-        className={`w-8 h-8 rounded-lg flex items-center justify-center cursor-pointer transition-all ${isLight ? "bg-transparent text-black" : "text-white/95"}`}
+        className="w-8 h-8 rounded-lg flex items-center justify-center cursor-pointer transition-all"
         aria-label="Home"
+        onClick={() => (window.location.href = "/")}
       >
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-          <path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z" />
-        </svg>
+        <Image src="/home.webp" alt="Home" width={20} height={20} className="rounded-[4px]" />
       </button>
 
       {/* Palette Icon - Blue */}
@@ -67,8 +70,9 @@ export function Dock({
 
       {/* Runs Icon - Orange/Yellow */}
       <button
-        className={`w-8 h-8 rounded-lg flex items-center justify-center cursor-pointer transition-all ${isLight ? "bg-transparent text-[#ff9900]" : "text-[#ff9900]"}`}
+        className={`w-8 h-8 rounded-lg flex items-center justify-center cursor-pointer transition-all ${historyOpen ? (isLight ? "bg-[#ff9900]/10 text-[#ff9900]" : "bg-[#ff9900]/15 text-[#ff9900]") : isLight ? "bg-transparent text-[#ff9900]" : "text-[#ff9900]"}`}
         aria-label="Runs"
+        onClick={() => setHistoryOpen((v) => !v)}
       >
         <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
           <path d="M13 3l-2 3H3v15h18V3h-8zm6 16H5V8h14v11z" />
