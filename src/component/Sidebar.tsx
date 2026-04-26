@@ -3,7 +3,7 @@
 import React, { useState, useCallback } from "react";
 import Image from "next/image";
 import { useRouter, usePathname } from "next/navigation";
-import { useUser } from "@clerk/nextjs";
+import { useUser, useClerk } from "@clerk/nextjs";
 import { useFlowStore } from "@/store/useFlowStore";
 import { useTheme } from "@/hooks/useTheme";
 
@@ -38,7 +38,9 @@ function SidebarIcon({
   const { isLight } = useTheme();
   if (icon) {
     return (
-      <div className={`w-6 h-6 rounded-md flex items-center justify-center ${isLight ? "bg-black/5" : "bg-white/10"}`}>
+      <div
+        className={`w-6 h-6 rounded-md flex items-center justify-center ${isLight ? "bg-black/5" : "bg-white/10"}`}
+      >
         <Image
           src={icon}
           alt={label}
@@ -52,7 +54,9 @@ function SidebarIcon({
 
   const icons: Record<string, React.ReactNode> = {
     Home: (
-      <div className={`w-6 h-6 rounded-md flex items-center justify-center ${isLight ? "bg-black/5" : "bg-white/10"}`}>
+      <div
+        className={`w-6 h-6 rounded-md flex items-center justify-center ${isLight ? "bg-black/5" : "bg-white/10"}`}
+      >
         <Image
           src="/home.webp"
           alt="Home"
@@ -63,7 +67,9 @@ function SidebarIcon({
       </div>
     ),
     "Train Lora": (
-      <div className={`w-6 h-6 rounded-md flex items-center justify-center ${isLight ? "bg-black/5" : "bg-white/10"}`}>
+      <div
+        className={`w-6 h-6 rounded-md flex items-center justify-center ${isLight ? "bg-black/5" : "bg-white/10"}`}
+      >
         <Image
           src="/trainLora.webp"
           alt="Train Lora"
@@ -207,8 +213,10 @@ export function Sidebar({
   const router = useRouter();
   const pathname = usePathname();
   const { user } = useUser();
+  const { signOut } = useClerk();
   const { collapsed, setCollapsed } = useFlowStore();
   const { isLight } = useTheme();
+  const [showLogout, setShowLogout] = useState(false);
 
   const onDragStart = (
     event: React.DragEvent,
@@ -233,7 +241,9 @@ export function Sidebar({
   };
 
   const [sessionsOpen, setSessionsOpen] = useState(false);
-  const [sessionWorkflows, setSessionWorkflows] = useState<SessionWorkflow[]>([]);
+  const [sessionWorkflows, setSessionWorkflows] = useState<SessionWorkflow[]>(
+    [],
+  );
   const [sessionsLoading, setSessionsLoading] = useState(false);
 
   const fetchSessionWorkflows = useCallback(async () => {
@@ -266,7 +276,7 @@ export function Sidebar({
       className={`h-full flex flex-col shrink-0 transition-all duration-300 ease-out border-r ${sidebarOpen ? "w-[230px]" : "w-[64px]"} ${isLight ? "bg-[#f9fafb] border-black/5 text-black" : "bg-black border-white/5 text-white"}`}
     >
       {/* Collapse toggle */}
-      <div className="px-4.5 pt-5 pb-3">
+      <div className="px-4.5 pt-5 pb-3 flex items-center justify-between">
         <button
           onClick={() => setCollapsed(!collapsed)}
           className={`transition-colors ${isLight ? "text-black/30 hover:text-black/60" : "text-white/30 hover:text-white/60"}`}
@@ -289,7 +299,9 @@ export function Sidebar({
         {sidebarSections.map((section, si) => (
           <div key={si} className="mb-4">
             {sidebarOpen && section.title && (
-              <div className={`px-3.5 py-1.5 text-[11px] font-medium uppercase tracking-widest ${isLight ? "text-black/40" : "text-white/40"}`}>
+              <div
+                className={`px-3.5 py-1.5 text-[11px] font-medium uppercase tracking-widest ${isLight ? "text-black/40" : "text-white/40"}`}
+              >
                 {section.title}
               </div>
             )}
@@ -329,7 +341,9 @@ export function Sidebar({
             onClick={handleSessionsToggle}
             className={`w-full flex items-center gap-3 px-3 py-[7px] rounded-lg text-[13.5px] font-medium transition-all ${isLight ? "text-black/70 hover:bg-black/8" : "text-white/90 hover:bg-white/8"}`}
           >
-            <div className={`w-6 h-6 rounded-md flex items-center justify-center ${isLight ? "bg-black/5" : "bg-white/10"}`}>
+            <div
+              className={`w-6 h-6 rounded-md flex items-center justify-center ${isLight ? "bg-black/5" : "bg-white/10"}`}
+            >
               <svg
                 width="14"
                 height="14"
@@ -365,18 +379,33 @@ export function Sidebar({
 
           {/* Session workflow list */}
           {sessionsOpen && sidebarOpen && (
-            <div className="mt-1 ml-3 pl-3 border-l border-dashed space-y-0.5"
-              style={{ borderColor: isLight ? "rgba(0,0,0,0.08)" : "rgba(255,255,255,0.08)" }}
+            <div
+              className="mt-1 ml-3 pl-3 border-l border-dashed space-y-0.5"
+              style={{
+                borderColor: isLight
+                  ? "rgba(0,0,0,0.08)"
+                  : "rgba(255,255,255,0.08)",
+              }}
             >
               {sessionsLoading ? (
-                <div className={`flex items-center gap-2 px-2 py-2 text-[12px] ${isLight ? "text-black/30" : "text-white/30"}`}>
-                  <svg className="animate-spin w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+                <div
+                  className={`flex items-center gap-2 px-2 py-2 text-[12px] ${isLight ? "text-black/30" : "text-white/30"}`}
+                >
+                  <svg
+                    className="animate-spin w-3 h-3"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="3"
+                  >
                     <path d="M21 12a9 9 0 1 1-6.219-8.56" />
                   </svg>
                   Loading...
                 </div>
               ) : sessionWorkflows.length === 0 ? (
-                <div className={`px-2 py-2 text-[12px] ${isLight ? "text-black/30" : "text-white/30"}`}>
+                <div
+                  className={`px-2 py-2 text-[12px] ${isLight ? "text-black/30" : "text-white/30"}`}
+                >
                   No projects yet
                 </div>
               ) : (
@@ -388,7 +417,9 @@ export function Sidebar({
                       onClick={() => router.push(`/node/${wf.id}`)}
                       className={`w-full flex items-center gap-2.5 px-2 py-[6px] rounded-md text-[12.5px] transition-all ${isCurrentProject ? (isLight ? "bg-black/8 text-black font-semibold" : "bg-white/8 text-white font-semibold") : isLight ? "text-black/60 hover:bg-black/5 hover:text-black/80" : "text-white/60 hover:bg-white/5 hover:text-white/80"}`}
                     >
-                      <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${isCurrentProject ? "bg-emerald-400" : isLight ? "bg-black/15" : "bg-white/15"}`} />
+                      <div
+                        className={`w-1.5 h-1.5 rounded-full shrink-0 ${isCurrentProject ? "bg-emerald-400" : isLight ? "bg-black/15" : "bg-white/15"}`}
+                      />
                       <span className="truncate">{wf.title || "Untitled"}</span>
                     </button>
                   );
@@ -401,25 +432,68 @@ export function Sidebar({
 
       {/* User info */}
       <div
-        className={`border-t p-3.5 ${sidebarOpen ? "" : "flex justify-center"} ${isLight ? "border-black/5" : "border-white/5"}`}
+        className={`relative border-t p-3.5 ${sidebarOpen ? "" : "flex justify-center"} ${isLight ? "border-black/5" : "border-white/5"}`}
       >
-        <div className={`flex items-center ${sidebarOpen ? "gap-3" : ""}`}>
+        <button
+          onClick={() => setShowLogout((v) => !v)}
+          className={`w-full flex items-center rounded-lg transition-colors ${sidebarOpen ? "gap-3 px-1 py-1 -mx-1 hover:" + (isLight ? "bg-black/5" : "bg-white/5") : "justify-center"}`}
+        >
           <div className="w-8 h-8 rounded-full bg-neutral-800 shrink-0 border border-white/5 flex items-center justify-center text-[11px] font-bold text-white/50">
             {user?.username?.[0]?.toUpperCase() ||
               user?.firstName?.[0]?.toUpperCase() ||
               "U"}
           </div>
           {sidebarOpen && (
-            <div className="min-w-0">
-              <div className={`text-[13px] truncate ${isLight ? "text-black/70" : "text-white/70"}`}>
+            <div className="min-w-0 text-left">
+              <div
+                className={`text-[13px] truncate ${isLight ? "text-black/70" : "text-white/70"}`}
+              >
                 {user?.username || user?.firstName || "User"}
               </div>
-              <div className={`text-[10px] uppercase tracking-tighter ${isLight ? "text-black/30" : "text-white/30"}`}>
+              <div
+                className={`text-[10px] uppercase tracking-tighter ${isLight ? "text-black/30" : "text-white/30"}`}
+              >
                 Free
               </div>
             </div>
           )}
-        </div>
+        </button>
+
+        {/* Logout popup */}
+        {showLogout && (
+          <>
+            <div
+              className="fixed inset-0 z-40"
+              onClick={() => setShowLogout(false)}
+            />
+            <div
+              className={`absolute z-50 rounded-xl border shadow-2xl overflow-hidden ${sidebarOpen ? "left-2 right-2" : "left-full ml-2 w-[160px]"}`}
+              style={{ bottom: "100%", marginBottom: 6 }}
+            >
+              <button
+                onClick={() => signOut({ redirectUrl: "/sign-in" })}
+                className={`w-full flex items-center gap-3 px-4 py-3 text-[14px] font-medium transition-colors ${isLight ? "bg-white hover:bg-black/5 text-black/70 border-black/5" : "bg-[#1a1a1a] hover:bg-white/10 text-white/70 border-white/10"}`}
+              >
+                <svg
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  className="opacity-60"
+                >
+                  <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                  <polyline points="16 17 21 12 16 7" />
+                  <line x1="21" y1="12" x2="9" y2="12" />
+                </svg>
+                Log out
+              </button>
+            </div>
+          </>
+        )}
       </div>
     </aside>
   );

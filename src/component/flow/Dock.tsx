@@ -4,8 +4,10 @@ import Image from "next/image";
 
 export function Dock({
   setCollapsed,
+  onAddNodeClick,
 }: {
   setCollapsed: (val: boolean | ((prev: boolean) => boolean)) => void;
+  onAddNodeClick?: () => void;
 }) {
   const { isLight } = useTheme();
   const historyOpen = useFlowStore((state) => state.historyOpen);
@@ -29,6 +31,26 @@ export function Dock({
         >
           <rect x="4" y="4" width="16" height="16" rx="3" />
           <path d="M9 4v16" />
+        </svg>
+      </button>
+
+      <button
+        className={`w-7 h-7 rounded-[7px] border grid place-items-center cursor-pointer transition-all ${isLight ? "border-black/5 bg-black/5 text-black/40 hover:bg-black/10" : "border-white/10 bg-white/5 text-white/80 hover:bg-white/10"}`}
+        onClick={onAddNodeClick}
+        aria-label="Add node"
+      >
+        <svg
+          width="14"
+          height="14"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <line x1="12" y1="5" x2="12" y2="19"></line>
+          <line x1="5" y1="12" x2="19" y2="12"></line>
         </svg>
       </button>
 

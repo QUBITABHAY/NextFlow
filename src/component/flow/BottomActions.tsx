@@ -3,15 +3,18 @@ import { useFlowStore } from "@/store/useFlowStore";
 import { useTheme } from "@/hooks/useTheme";
 import { paletteItems } from "./constants";
 import { PaletteItem } from "./types";
+import { Plus, MousePointer2, Hand, Scissors } from "lucide-react";
 
 export function BottomActions({
   externalOpen,
   onExternalOpenChange,
   dropPosition,
+  leftOffset = "",
 }: {
   externalOpen?: boolean;
   onExternalOpenChange?: (open: boolean) => void;
   dropPosition?: { x: number; y: number } | null;
+  leftOffset?: string;
 } = {}) {
   const [internalOpen, setInternalOpen] = useState(false);
   const isMenuOpen = externalOpen ?? internalOpen;
@@ -69,6 +72,12 @@ export function BottomActions({
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [undo, redo]);
+
+  const [showShortcuts, setShowShortcuts] = useState(false);
+  const isMac =
+    typeof navigator !== "undefined" &&
+    navigator.platform.toUpperCase().includes("MAC");
+  const mod = isMac ? "⌘" : "Ctrl";
 
   const [recentNodes, setRecentNodes] = useState<PaletteItem[]>([]);
 
@@ -217,8 +226,8 @@ export function BottomActions({
             strokeLinecap="round"
             strokeLinejoin="round"
           >
-            <path d="M11 17L6 12L11 7" />
-            <path d="M6 12H13.5C15.93 12 18 14.07 18 16.5V16.5" />
+            <path d="M9 14 4 9l5-5" />
+            <path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5H11" />
           </svg>
         </button>
         <button
@@ -237,27 +246,65 @@ export function BottomActions({
             strokeLinecap="round"
             strokeLinejoin="round"
           >
-            <path d="M13 17L18 12L13 7" />
-            <path d="M18 12H10.5C8.07 12 6 14.07 6 16.5V16.5" />
+            <path d="m15 14 5-5-5-5" />
+            <path d="M20 9H9.5A5.5 5.5 0 0 0 4 14.5A5.5 5.5 0 0 0 9.5 20H13" />
           </svg>
         </button>
-        <button
-          className={`h-9 rounded-xl border text-xs font-medium px-4 transition-all shadow-sm hidden md:flex items-center gap-2 ${isLight ? "border-black/5 bg-white text-black/60 hover:bg-black/5" : "border-[#1f1f1f] bg-[#0f0f0f] text-white/80 hover:bg-white/10 hover:text-white"}`}
+        <div
+          className="relative hidden md:block"
+          onMouseEnter={() => setShowShortcuts(true)}
+          onMouseLeave={() => setShowShortcuts(false)}
         >
-          <svg
-            width="14"
-            height="14"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
+          <button
+            className={`h-9 rounded-xl border text-xs font-medium px-4 transition-all shadow-sm flex items-center gap-2 ${isLight ? "border-black/5 bg-white text-black/60 hover:bg-black/5" : "border-[#1f1f1f] bg-[#0f0f0f] text-white/80 hover:bg-white/10 hover:text-white"}`}
           >
-            <path d="M18 3a3 3 0 1 1-3 3V6a3 3 0 1 1 3-3ZM18 3v3ZM18 18a3 3 0 1 1-3-3v3a3 3 0 1 1 3 3ZM18 18h-3ZM6 18a3 3 0 1 1 3-3v3a3 3 0 1 1-3 3ZM6 18v-3ZM6 6a3 3 0 1 1 3 3H6a3 3 0 1 1-3-3ZM6 6h3ZM6 18h12ZM18 6v12ZM18 6H6ZM6 6v12" />
-          </svg>
-          <span>Keyboard shortcuts</span>
-        </button>
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M15 6v12a3 3 0 1 0 3-3H6a3 3 0 1 0 3 3V6a3 3 0 1 0-3 3h12a3 3 0 1 0-3-3" />
+            </svg>
+            <span>Keyboard shortcuts</span>
+          </button>
+
+          {showShortcuts && (
+            <div
+              className={`absolute bottom-full left-0 mb-2 w-[240px] rounded-xl border p-3 shadow-xl animate-in fade-in zoom-in-95 duration-200 ${isLight ? "bg-white border-black/10" : "bg-[#1a1a1a] border-[#2a2a2a]"}`}
+            >
+              <div
+                className={`text-[11px] font-semibold tracking-wider uppercase mb-2.5 px-1 ${isLight ? "text-black/40" : "text-white/30"}`}
+              >
+                Shortcuts
+              </div>
+              {[
+                { label: "Undo", keys: `${mod} + Z` },
+                { label: "Redo", keys: `${mod} + Shift + Z` },
+                { label: "Delete node", keys: "Backspace" },
+                { label: "Multi-select", keys: `Shift + Click` },
+                { label: "Zoom in / out", keys: `${mod} + Scroll` },
+                { label: "Pan canvas", keys: "Space + Drag" },
+              ].map((s) => (
+                <div
+                  key={s.label}
+                  className={`flex items-center justify-between py-1.5 px-1 text-[12px] ${isLight ? "text-black/70" : "text-white/70"}`}
+                >
+                  <span>{s.label}</span>
+                  <span
+                    className={`text-[11px] font-mono px-1.5 py-0.5 rounded ${isLight ? "bg-black/5 text-black/50" : "bg-white/8 text-white/50"}`}
+                  >
+                    {s.keys}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       <div
@@ -505,21 +552,10 @@ export function BottomActions({
           <div className="relative group">
             <button
               onClick={() => setIsMenuOpen(!isMenuOpen)}
+              title="Add node"
               className={`w-11 h-11 rounded-xl border-0 flex items-center justify-center transition-colors ${isMenuOpen ? (isLight ? "bg-black/5" : "bg-[#1f1f1f]") : isLight ? "bg-transparent hover:bg-black/5" : "bg-transparent hover:bg-[#1a1a1a]"} ${isLight ? "text-black" : "text-white"}`}
             >
-              <svg
-                width="22"
-                height="22"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <line x1="12" y1="5" x2="12" y2="19"></line>
-                <line x1="5" y1="12" x2="19" y2="12"></line>
-              </svg>
+              <Plus size={22} strokeWidth={2} />
             </button>
           </div>
 
@@ -530,98 +566,31 @@ export function BottomActions({
           <div className="relative group">
             <button
               onClick={() => setInteractionMode?.("select")}
+              title="Select mode"
               className={`w-11 h-11 rounded-xl border-0 flex items-center justify-center transition-colors ${interactionMode === "select" ? (isLight ? "bg-black/5 text-black" : "bg-[#1f1f1f] text-white shadow-inner") : isLight ? "bg-transparent text-black/40 hover:bg-black/5" : "bg-transparent text-white/60 hover:text-white hover:bg-[#1a1a1a]"} ml-1`}
             >
-              <svg
-                width="20"
-                height="20"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <path d="m3 3 7.07 16.97 2.51-7.39 7.39-2.51L3 3z" />
-              </svg>
+              <MousePointer2 size={20} strokeWidth={2.5} />
             </button>
           </div>
 
           <button
             onClick={() => setInteractionMode?.("pan")}
+            title="Pan mode (Space + Drag)"
             className={`w-11 h-11 rounded-xl border-0 flex items-center justify-center transition-colors ${interactionMode === "pan" ? (isLight ? "bg-black/5 text-black" : "bg-[#1f1f1f] text-white shadow-inner") : isLight ? "bg-transparent text-black/40 hover:bg-black/5" : "bg-transparent text-white/60 hover:text-white hover:bg-[#1a1a1a]"}`}
           >
-            <svg
-              width="22"
-              height="22"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M18 11V6a2 2 0 0 0-4 0v4" />
-              <path d="M14 10V5a2 2 0 0 0-4 0v5" />
-              <path d="M10 10.5V4a2 2 0 0 0-4 0v9" />
-              <path d="M6 13v-1a2 2 0 0 0-4 0v5c0 4.4 3.6 8 8 8h3c3.3 0 6-2.7 6-6v-5a2 2 0 0 0-4 0v1" />
-            </svg>
+            <Hand size={22} strokeWidth={2.5} />
           </button>
 
           <button
-            className={`w-11 h-11 rounded-xl border-0 bg-transparent transition-colors flex items-center justify-center ${isLight ? "text-black/40 hover:text-black hover:bg-black/5" : "text-white/60 hover:text-white hover:bg-[#1a1a1a]"}`}
+            onClick={() =>
+              setInteractionMode?.(
+                interactionMode === "cut" ? "select" : "cut",
+              )
+            }
+            title="Cut edges (draw to slice)"
+            className={`w-11 h-11 rounded-xl border-0 transition-colors flex items-center justify-center ${interactionMode === "cut" ? (isLight ? "bg-red-50 text-red-500" : "bg-red-500/10 text-red-400 shadow-inner") : isLight ? "bg-transparent text-black/40 hover:text-black hover:bg-black/5" : "bg-transparent text-white/60 hover:text-white hover:bg-[#1a1a1a]"}`}
           >
-            <svg
-              width="22"
-              height="22"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <circle cx="6" cy="6" r="3" />
-              <circle cx="6" cy="18" r="3" />
-              <line x1="20" y1="4" x2="8.12" y2="15.88" />
-              <line x1="14.47" y1="14.48" x2="20" y2="20" />
-              <line x1="8.12" y1="8.12" x2="12" y2="12" />
-            </svg>
-          </button>
-
-          <button
-            className={`w-11 h-11 rounded-xl border-0 bg-transparent transition-colors flex items-center justify-center ${isLight ? "text-black/40 hover:text-black hover:bg-black/5" : "text-white/60 hover:text-white hover:bg-[#1a1a1a]"}`}
-          >
-            <div className="grid grid-cols-3 gap-[2px]">
-              <div className="w-1 h-1 bg-current rounded-full"></div>
-              <div className="w-1 h-1 bg-current rounded-full"></div>
-              <div className="w-1 h-1 bg-current rounded-full"></div>
-              <div className="w-1 h-1 bg-current rounded-full"></div>
-              <div className="w-1 h-1 bg-current rounded-full"></div>
-              <div className="w-1 h-1 bg-current rounded-full"></div>
-              <div className="w-1 h-1 bg-current rounded-full"></div>
-              <div className="w-1 h-1 bg-current rounded-full opacity-0"></div>
-              <div className="w-1 h-1 bg-current rounded-full"></div>
-            </div>
-          </button>
-
-          <button
-            className={`w-11 h-11 rounded-xl border-0 bg-transparent transition-colors flex items-center justify-center ${isLight ? "text-black/40 hover:text-black hover:bg-black/5" : "text-white/60 hover:text-white hover:bg-[#1a1a1a]"}`}
-          >
-            <svg
-              width="22"
-              height="22"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <rect x="3" y="14" width="7" height="7" rx="2" />
-              <rect x="14" y="3" width="7" height="7" rx="2" />
-              <path d="M6.5 14v-2c0-2.2 1.8-4 4-4h3.5" />
-            </svg>
+            <Scissors size={22} strokeWidth={2.5} />
           </button>
         </div>
       </div>

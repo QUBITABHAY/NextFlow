@@ -10,6 +10,8 @@ export function TopActions({ leftOffset }: { leftOffset: string }) {
   const stopWorkflow = useFlowStore((state) => state.stopWorkflow);
   const historyOpen = useFlowStore((state) => state.historyOpen);
   const setHistoryOpen = useFlowStore((state) => state.setHistoryOpen);
+  const workflowTitle = useFlowStore((state) => state.workflowTitle);
+  const setWorkflowTitle = useFlowStore((state) => state.setWorkflowTitle);
   const { isLight } = useTheme();
 
   const [showToast, setShowToast] = useState(false);
@@ -36,35 +38,20 @@ export function TopActions({ leftOffset }: { leftOffset: string }) {
   return (
     <>
       <div
-        className={`absolute top-4 z-40 h-9 rounded-xl border flex items-center gap-2.5 px-3.5 text-[13px] shadow-sm transition-all duration-300 ease-out ${leftOffset} ${isLight ? "border-black/5 bg-white text-black/80" : "border-[#1f1f1f] bg-[#0f0f0f] text-[#eceff5]"}`}
+        className={`absolute top-4 z-40 flex items-center transition-all duration-300 ease-out pl-4`}
       >
         <div
-          className={`w-5 h-5 rounded-md flex items-center justify-center ${isLight ? "bg-black/5" : "bg-white/10"}`}
+          className={`h-11 rounded-2xl flex items-center gap-2 pl-1.5 pr-4 shadow-[0_8px_30px_rgba(0,0,0,0.2)] transition-all duration-300 ease-out ${isLight ? "bg-white text-black" : "bg-[#1a1a1a] text-white"}`}
         >
-          <span
-            className={
-              isLight
-                ? "text-black/40 text-[10px]"
-                : "text-white/50 text-[10px]"
-            }
-          >
-            ✦
-          </span>
+          <input
+            type="text"
+            className={`bg-transparent border-none outline-none font-semibold text-[14px] min-w-[60px] w-auto max-w-[150px] p4 text-center focus:ring-0 p-0 ${isLight ? "text-black/80" : "text-white"}`}
+            value={workflowTitle}
+            onChange={(e) => setWorkflowTitle(e.target.value)}
+            placeholder="Untitled"
+            onFocus={(e) => e.target.select()}
+          />
         </div>
-        <span className="font-medium">Untitled</span>
-        <svg
-          width="10"
-          height="10"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2.5"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          className="opacity-40"
-        >
-          <polyline points="6 9 12 15 18 9"></polyline>
-        </svg>
       </div>
 
       <div className="absolute top-4 right-4 z-40 flex items-center gap-2">
