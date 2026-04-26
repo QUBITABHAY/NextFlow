@@ -10,23 +10,13 @@ export const workflowNodeSchema = z.object({
     y: z.number(),
   }),
   data: z.record(z.string(), z.any()),
-  width: z.number().optional(),
-  height: z.number().optional(),
-  selected: z.boolean().optional(),
-  dragging: z.boolean().optional(),
-});
+}).passthrough();
 
 export const workflowEdgeSchema = z.object({
   id: z.string(),
   source: z.string(),
   target: z.string(),
-  sourceHandle: z.string().nullish(),
-  targetHandle: z.string().nullish(),
-  type: z.string().optional(),
-  data: z.record(z.string(), z.any()).optional(),
-  animated: z.boolean().optional(),
-  style: z.record(z.string(), z.any()).optional(),
-});
+}).passthrough();
 
 export const updateWorkflowSchema = z.object({
   title: z.string().min(1).max(100).optional(),

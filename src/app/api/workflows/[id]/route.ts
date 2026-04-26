@@ -47,7 +47,9 @@ export async function PATCH(
     return jsonError("Validation failed", 400);
   }
 
-  const { title, nodes, edges, viewport } = validation.data;
+  const { title, nodes: rawNodes, edges: rawEdges, viewport } = validation.data;
+  const nodes = rawNodes as Prisma.InputJsonValue[] | undefined;
+  const edges = rawEdges as Prisma.InputJsonValue[] | undefined;
 
   // Make sure the user row exists before the FK reference
   await ensureUser(auth.userId);

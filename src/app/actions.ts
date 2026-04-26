@@ -155,11 +155,12 @@ export async function triggerNodeAction(
         };
       }
 
+      const mediaList: string[] = inputData?.media ?? [];
       const handle = await tasks.trigger<typeof llmCall>("llm-call", {
         nodeId,
         systemPrompt: inputData?.systemPrompt || undefined,
         userMessage: inputData?.userMessage || inputData?.prompt || "",
-        imageUrl: inputData?.media?.[0] || undefined,
+        imageUrls: mediaList.length > 0 ? mediaList : undefined,
         model: inputData?.selectedModel || "gemini-2.0-flash",
       });
 

@@ -346,12 +346,14 @@ async function executeNode(
 }
 
 /**
- * Execute the entire workflow:
- * 1. Validate DAG (no cycles)
- * 2. Group nodes into parallel execution levels
- * 3. Execute each level, running nodes within a level in parallel
+ * Execute the entire workflow using an ASAP DAG scheduler.
  *
- * Returns { success, error? }
+ * Instead of grouping nodes into levels and waiting for each level to finish,
+ * each node starts as soon as ALL of its specific dependencies are done.
+ * Independent branches execute fully in parallel without blocking each other.
+ *
+ * Example: A→B→C and D→E run as two independent pipelines.
+ * D→E doesn't wait for A→B to finish.
  */
 export async function executeWorkflow(
   nodes: Node[],
@@ -370,41 +372,134 @@ export async function executeWorkflow(
     };
   }
 
-  // 2. Get execution levels
-  const levels = getExecutionLevels(nodes, edges);
-  if (levels.length === 0) {
+  // 2. Build dependency graph for executable nodes only
+  const executableIds = new Set(
+    nodes
+      .filter((n) => isExecutableNode(n) && hasInput(n, edges))
+      .map((n) => n.id),
+  );
+
+  if (executableIds.size === 0) {
     return { success: false, error: "No executable nodes in the workflow." };
   }
 
-  // 3. Execute level by level
-  let completedLevels = 0;
-  for (const level of levels) {
-    if (abortSignal?.aborted) {
-      return {
-        success: false,
-        partial: completedLevels > 0,
-        error: "Workflow execution was stopped.",
-      };
-    }
+  // deps: nodeId → set of executable node IDs it must wait for
+  const deps = new Map<string, Set<string>>();
+  // dependents: nodeId → set of executable node IDs that depend on it
+  const dependents = new Map<string, Set<string>>();
 
-    // Run all nodes in this level in parallel
-    const results = await Promise.all(
-      level.map((nodeId) =>
-        executeNode(nodeId, getLatestNodes(), edges, updateNodeData, tracker),
-      ),
-    );
-
-    // Check if any node in this level failed
-    const failedCount = results.filter((r) => !r).length;
-    if (failedCount > 0) {
-      return {
-        success: false,
-        partial: completedLevels > 0,
-        error: `${failedCount} node(s) failed in execution. Check individual nodes for details.`,
-      };
-    }
-    completedLevels++;
+  for (const id of executableIds) {
+    deps.set(id, new Set());
+    dependents.set(id, new Set());
   }
 
-  return { success: true };
+  for (const edge of edges) {
+    if (executableIds.has(edge.source) && executableIds.has(edge.target)) {
+      deps.get(edge.target)!.add(edge.source);
+      dependents.get(edge.source)!.add(edge.target);
+    }
+  }
+
+  // 3. ASAP scheduler — each node runs as soon as its deps finish
+  const completed = new Set<string>();
+  const failed = new Set<string>();
+
+  return new Promise((resolve) => {
+    let running = 0;
+    // Nodes ready to execute (all deps satisfied)
+    const ready: string[] = [...executableIds].filter(
+      (id) => deps.get(id)!.size === 0,
+    );
+
+    function schedule() {
+      // Check abort
+      if (abortSignal?.aborted) {
+        if (running === 0) {
+          resolve({
+            success: false,
+            partial: completed.size > 0,
+            error: "Workflow execution was stopped.",
+          });
+        }
+        return;
+      }
+
+      // Launch all ready nodes
+      while (ready.length > 0) {
+        const nodeId = ready.shift()!;
+        running++;
+
+        executeNode(
+          nodeId,
+          getLatestNodes(),
+          edges,
+          updateNodeData,
+          tracker,
+        ).then((success) => {
+          running--;
+
+          if (success) {
+            completed.add(nodeId);
+
+            // Unlock dependents whose deps are now all satisfied
+            for (const depId of dependents.get(nodeId) ?? []) {
+              const depDeps = deps.get(depId)!;
+              const allMet = [...depDeps].every((d) => completed.has(d));
+              // Only schedule if all deps succeeded (skip if any dep failed)
+              const anyFailed = [...depDeps].some((d) => failed.has(d));
+              if (allMet && !anyFailed) {
+                ready.push(depId);
+              } else if (anyFailed) {
+                // Propagate failure — don't run nodes whose deps failed
+                failed.add(depId);
+              }
+            }
+          } else {
+            failed.add(nodeId);
+
+            // Mark all downstream nodes as failed (they can't run)
+            const markDownstream = (id: string) => {
+              for (const depId of dependents.get(id) ?? []) {
+                if (!failed.has(depId)) {
+                  failed.add(depId);
+                  markDownstream(depId);
+                }
+              }
+            };
+            markDownstream(nodeId);
+          }
+
+          // Check if we're done
+          if (running === 0 && ready.length === 0) {
+            if (failed.size > 0) {
+              resolve({
+                success: false,
+                partial: completed.size > 0,
+                error: `${failed.size} node(s) failed in execution. Check individual nodes for details.`,
+              });
+            } else {
+              resolve({ success: true });
+            }
+          } else {
+            schedule();
+          }
+        });
+      }
+
+      // If nothing is running and nothing is ready, we're done
+      if (running === 0 && ready.length === 0) {
+        if (failed.size > 0) {
+          resolve({
+            success: false,
+            partial: completed.size > 0,
+            error: `${failed.size} node(s) failed in execution. Check individual nodes for details.`,
+          });
+        } else {
+          resolve({ success: true });
+        }
+      }
+    }
+
+    schedule();
+  });
 }

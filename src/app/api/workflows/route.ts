@@ -9,7 +9,7 @@ export async function GET() {
   const workflows = await prisma.workflow.findMany({
     where: { userId: auth.userId },
     orderBy: { updatedAt: "desc" },
-    select: { id: true, title: true, createdAt: true, updatedAt: true },
+    select: { id: true, title: true, createdAt: true, updatedAt: true, nodes: true, edges: true },
   });
 
   return jsonSuccess(workflows);

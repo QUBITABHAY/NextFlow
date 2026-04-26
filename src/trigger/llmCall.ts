@@ -15,13 +15,22 @@ export const llmCall = task({
     systemPrompt?: string;
     userMessage: string;
     imageUrl?: string;
+    imageUrls?: string[];
     model: string;
   }) => {
+    // Merge single imageUrl into imageUrls for backwards compat
+    const allImageUrls = [
+      ...(payload.imageUrls ?? []),
+      ...(payload.imageUrl && !payload.imageUrls?.includes(payload.imageUrl)
+        ? [payload.imageUrl]
+        : []),
+    ];
+
     logger.info("Starting LLM call", {
       nodeId: payload.nodeId,
       model: payload.model,
       hasSystemPrompt: !!payload.systemPrompt,
-      hasImage: !!payload.imageUrl,
+      imageCount: allImageUrls.length,
     });
 
     const apiKey = process.env.GEMINI_API_KEY;
@@ -44,15 +53,14 @@ export const llmCall = task({
         { text: string } | { inlineData: { mimeType: string; data: string } }
       > = [];
 
-      // Add image if provided
-      if (payload.imageUrl) {
-        logger.info("Processing image input...");
+      // Add all images
+      for (const imageUrl of allImageUrls) {
+        logger.info("Processing image input...", { imageUrl: imageUrl.slice(0, 60) });
         let base64Data: string;
         let mimeType: string;
 
-        if (payload.imageUrl.startsWith("data:")) {
-          // data URL → extract base64
-          const match = payload.imageUrl.match(/^data:([^;]+);base64,(.+)$/);
+        if (imageUrl.startsWith("data:")) {
+          const match = imageUrl.match(/^data:([^;]+);base64,(.+)$/);
           if (match) {
             mimeType = match[1];
             base64Data = match[2];
@@ -60,8 +68,7 @@ export const llmCall = task({
             throw new Error("Invalid data URL format for image");
           }
         } else {
-          // HTTP URL → fetch and convert
-          const res = await fetch(payload.imageUrl);
+          const res = await fetch(imageUrl);
           if (!res.ok)
             throw new Error(`Failed to fetch image: HTTP ${res.status}`);
           const buffer = Buffer.from(await res.arrayBuffer());
