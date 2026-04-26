@@ -9,6 +9,9 @@ export const llmCall = task({
   id: "llm-call",
   retry: {
     maxAttempts: 2,
+    minTimeoutInMs: 10_000,
+    factor: 2,
+    randomize: true,
   },
   run: async (payload: {
     nodeId: string;
@@ -46,46 +49,44 @@ export const llmCall = task({
     const modelId = GEMINI_MODELS.includes(payload.model as GeminiModel)
       ? payload.model
       : "gemini-2.0-flash";
+    const parts: Array<
+      { text: string } | { inlineData: { mimeType: string; data: string } }
+    > = [];
+    for (const imageUrl of allImageUrls) {
+      logger.info("Processing image input...", {
+        imageUrl: imageUrl.slice(0, 60),
+      });
+      let base64Data: string;
+      let mimeType: string;
 
-    try {
-      // Build content parts
-      const parts: Array<
-        { text: string } | { inlineData: { mimeType: string; data: string } }
-      > = [];
-
-      // Add all images
-      for (const imageUrl of allImageUrls) {
-        logger.info("Processing image input...", { imageUrl: imageUrl.slice(0, 60) });
-        let base64Data: string;
-        let mimeType: string;
-
-        if (imageUrl.startsWith("data:")) {
-          const match = imageUrl.match(/^data:([^;]+);base64,(.+)$/);
-          if (match) {
-            mimeType = match[1];
-            base64Data = match[2];
-          } else {
-            throw new Error("Invalid data URL format for image");
-          }
+      if (imageUrl.startsWith("data:")) {
+        const match = imageUrl.match(/^data:([^;]+);base64,(.+)$/);
+        if (match) {
+          mimeType = match[1];
+          base64Data = match[2];
         } else {
-          const res = await fetch(imageUrl);
-          if (!res.ok)
-            throw new Error(`Failed to fetch image: HTTP ${res.status}`);
-          const buffer = Buffer.from(await res.arrayBuffer());
-          base64Data = buffer.toString("base64");
-          mimeType = res.headers.get("content-type") || "image/jpeg";
+          throw new Error("Invalid data URL format for image");
         }
-
-        parts.push({
-          inlineData: { mimeType, data: base64Data },
-        });
+      } else {
+        const res = await fetch(imageUrl);
+        if (!res.ok)
+          throw new Error(`Failed to fetch image: HTTP ${res.status}`);
+        const buffer = Buffer.from(await res.arrayBuffer());
+        base64Data = buffer.toString("base64");
+        mimeType = res.headers.get("content-type") || "image/jpeg";
       }
 
-      // Add user message
-      parts.push({ text: payload.userMessage });
+      parts.push({
+        inlineData: { mimeType, data: base64Data },
+      });
+    }
 
-      logger.info("Calling Gemini API", { model: modelId });
+    // Add user message
+    parts.push({ text: payload.userMessage });
 
+    logger.info("Calling Gemini API", { model: modelId });
+
+    try {
       const response = await ai.models.generateContent({
         model: modelId,
         contents: [{ role: "user", parts }],
@@ -107,6 +108,18 @@ export const llmCall = task({
       };
     } catch (error: any) {
       logger.error("LLM call failed", { error: error.message });
+
+      const msg: string = error.message ?? "";
+      if (
+        msg.includes("429") ||
+        msg.toLowerCase().includes("rate limit") ||
+        msg.toLowerCase().includes("resource_exhausted") ||
+        msg.toLowerCase().includes("quota")
+      ) {
+        logger.warn("Rate limit hit — will retry with backoff", { error: msg });
+        throw error;
+      }
+
       return {
         success: false,
         result: `LLM call failed: ${error.message}`,
