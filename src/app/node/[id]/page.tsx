@@ -177,7 +177,7 @@ function WorkflowBuilder({ workflowId }: { workflowId: string }) {
   );
 
   const onPaneContextMenu = useCallback(
-    (event: React.MouseEvent) => {
+    (event: MouseEvent | React.MouseEvent) => {
       event.preventDefault();
       const flowPos = screenToFlowPosition({
         x: event.clientX,
