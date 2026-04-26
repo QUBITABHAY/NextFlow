@@ -1,5 +1,5 @@
 import type { Node, Edge } from "@xyflow/react";
-import { triggerNodeAction } from "@/app/actions";
+import { triggerNodeAction, pollRunStatus } from "@/app/actions";
 
 type UpdateNodeData = (nodeId: string, data: any) => void;
 
@@ -231,7 +231,7 @@ function collectNodeInputs(
   if (node.type === "llmNode") {
     extra.systemPrompt = nodeData.systemPrompt || "";
     extra.userMessage = nodeData.userMessage || "";
-    extra.selectedModel = nodeData.selectedModel || "gemini-2.0-flash";
+    extra.selectedModel = nodeData.selectedModel ?? "";
     // If text nodes are connected, append to user message
     if (combinedPrompt && !nodeData.userMessage) {
       extra.userMessage = combinedPrompt;
@@ -285,33 +285,18 @@ async function executeNode(
   }
 
   try {
-    const response = await triggerNodeAction(nodeId, nodeTypeLabel, {
+    const triggerResponse = await triggerNodeAction(nodeId, nodeTypeLabel, {
       prompt,
       media,
       ...extra,
     });
 
-    const duration = Date.now() - startTime;
-
-    if (response.success) {
+    if (!triggerResponse.success || !triggerResponse.runId) {
+      const duration = Date.now() - startTime;
+      const errMsg = triggerResponse.error || "Failed to trigger task";
       updateNodeData(nodeId, {
         isRunning: false,
-        runResult: response.runResult,
-        inputBadge: "Success",
-      });
-      if (tracker && nodeRunId) {
-        await tracker.onNodeFinish(
-          nodeRunId,
-          true,
-          duration,
-          response.runResult,
-        );
-      }
-      return true;
-    } else {
-      updateNodeData(nodeId, {
-        isRunning: false,
-        runResult: response.error || "Task failed",
+        runResult: errMsg,
         inputBadge: "Failed",
       });
       if (tracker && nodeRunId) {
@@ -320,11 +305,100 @@ async function executeNode(
           false,
           duration,
           undefined,
-          response.error || "Task failed",
+          errMsg,
         );
       }
       return false;
     }
+
+    const runId = triggerResponse.runId;
+    const MAX_POLLS = 180;
+    let queuedPolls = 0;
+    const QUEUE_LIMIT = 30;
+
+    for (let i = 0; i < MAX_POLLS; i++) {
+      await new Promise((r) => setTimeout(r, 2000));
+
+      const status = await pollRunStatus(runId, nodeTypeLabel);
+
+      if (status.done) {
+        const duration = Date.now() - startTime;
+        if (status.success) {
+          updateNodeData(nodeId, {
+            isRunning: false,
+            runResult: status.runResult,
+            inputBadge: "Success",
+          });
+          if (tracker && nodeRunId) {
+            await tracker.onNodeFinish(
+              nodeRunId,
+              true,
+              duration,
+              status.runResult,
+            );
+          }
+          return true;
+        } else {
+          updateNodeData(nodeId, {
+            isRunning: false,
+            runResult: status.error || "Task failed",
+            inputBadge: "Failed",
+          });
+          if (tracker && nodeRunId) {
+            await tracker.onNodeFinish(
+              nodeRunId,
+              false,
+              duration,
+              undefined,
+              status.error || "Task failed",
+            );
+          }
+          return false;
+        }
+      }
+
+      if (
+        status.status === "QUEUED" ||
+        status.status === "WAITING" ||
+        status.status === "PENDING_VERSION"
+      ) {
+        queuedPolls++;
+        if (queuedPolls >= QUEUE_LIMIT) {
+          const duration = Date.now() - startTime;
+          const errMsg = `Task stuck in queue for ${QUEUE_LIMIT * 2}s. Make sure the worker is running.`;
+          updateNodeData(nodeId, {
+            isRunning: false,
+            runResult: errMsg,
+            inputBadge: "Failed",
+          });
+          if (tracker && nodeRunId) {
+            await tracker.onNodeFinish(
+              nodeRunId,
+              false,
+              duration,
+              undefined,
+              errMsg,
+            );
+          }
+          return false;
+        }
+      } else {
+        queuedPolls = 0;
+      }
+    }
+
+    // Timed out
+    const duration = Date.now() - startTime;
+    const errMsg = "Task timed out after 6 minutes";
+    updateNodeData(nodeId, {
+      isRunning: false,
+      runResult: errMsg,
+      inputBadge: "Failed",
+    });
+    if (tracker && nodeRunId) {
+      await tracker.onNodeFinish(nodeRunId, false, duration, undefined, errMsg);
+    }
+    return false;
   } catch (err: any) {
     const duration = Date.now() - startTime;
     updateNodeData(nodeId, {
