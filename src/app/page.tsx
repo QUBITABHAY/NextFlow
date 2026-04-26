@@ -4,15 +4,168 @@ import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 
+type WfNode = {
+  id: string;
+  type?: string;
+  position: { x: number; y: number };
+  data: Record<string, any>;
+  measured?: { width?: number; height?: number };
+  width?: number;
+  height?: number;
+  parentId?: string;
+};
+
+type WfEdge = {
+  id: string;
+  source: string;
+  target: string;
+};
+
 type Workflow = {
   id: string;
   title: string;
   createdAt: string;
   updatedAt: string;
+  nodes?: WfNode[];
+  edges?: WfEdge[];
 };
 
 import { Sidebar } from "@/component/Sidebar";
 import { useTheme } from "@/hooks/useTheme";
+import { WORKFLOW_TEMPLATES, type WorkflowTemplate } from "@/lib/templates";
+
+const NODE_COLORS: Record<string, string> = {
+  workflowCard: "#22c55e",
+  textNode: "#e3c92f",
+  mediaNode: "#1188ff",
+  llmNode: "#a855f7",
+  groupNode: "#6b7280",
+};
+
+/** Extract the first image URL found in any node's data */
+function extractFirstImage(nodes: WfNode[]): string | null {
+  for (const n of nodes) {
+    const d = n.data;
+    if (d.uploadedImageUrl) return d.uploadedImageUrl;
+    if (typeof d.url === "string" && /\.(png|jpe?g|webp|gif|svg)/i.test(d.url))
+      return d.url;
+    if (
+      typeof d.runResult === "string" &&
+      (d.runResult.startsWith("http") || d.runResult.startsWith("data:image"))
+    )
+      return d.runResult;
+  }
+  return null;
+}
+
+/** SVG minimap of a workflow's nodes & edges */
+function WorkflowMinimap({
+  nodes,
+  edges,
+  isLight,
+}: {
+  nodes: WfNode[];
+  edges: WfEdge[];
+  isLight: boolean;
+}) {
+  // Filter out group nodes for bounding box — they just contain others
+  const visibleNodes = nodes.filter((n) => n.type !== "groupNode" && !n.parentId);
+  const childNodes = nodes.filter((n) => !!n.parentId);
+
+  // Resolve absolute positions for child nodes
+  const parentMap = new Map(nodes.map((n) => [n.id, n]));
+  const absPos = (n: WfNode) => {
+    if (n.parentId) {
+      const parent = parentMap.get(n.parentId);
+      if (parent)
+        return {
+          x: parent.position.x + n.position.x,
+          y: parent.position.y + n.position.y,
+        };
+    }
+    return n.position;
+  };
+
+  const allNodes = [...visibleNodes, ...childNodes];
+  if (allNodes.length === 0) return null;
+
+  // Compute bounding box
+  let minX = Infinity,
+    minY = Infinity,
+    maxX = -Infinity,
+    maxY = -Infinity;
+  for (const n of allNodes) {
+    const pos = absPos(n);
+    const w = n.measured?.width ?? (n.width as number) ?? 200;
+    const h = n.measured?.height ?? (n.height as number) ?? 120;
+    minX = Math.min(minX, pos.x);
+    minY = Math.min(minY, pos.y);
+    maxX = Math.max(maxX, pos.x + w);
+    maxY = Math.max(maxY, pos.y + h);
+  }
+
+  const pad = 40;
+  const bw = maxX - minX + pad * 2;
+  const bh = maxY - minY + pad * 2;
+
+  // Build node position lookup for edges
+  const nodeCenters = new Map<string, { cx: number; cy: number }>();
+  for (const n of allNodes) {
+    const pos = absPos(n);
+    const w = n.measured?.width ?? (n.width as number) ?? 200;
+    const h = n.measured?.height ?? (n.height as number) ?? 120;
+    nodeCenters.set(n.id, {
+      cx: pos.x - minX + pad + w / 2,
+      cy: pos.y - minY + pad + h / 2,
+    });
+  }
+
+  return (
+    <svg
+      viewBox={`0 0 ${bw} ${bh}`}
+      className="w-full h-full"
+      preserveAspectRatio="xMidYMid meet"
+    >
+      {/* Edges */}
+      {edges.map((e) => {
+        const src = nodeCenters.get(e.source);
+        const tgt = nodeCenters.get(e.target);
+        if (!src || !tgt) return null;
+        const dx = tgt.cx - src.cx;
+        return (
+          <path
+            key={e.id}
+            d={`M${src.cx},${src.cy} C${src.cx + dx * 0.4},${src.cy} ${tgt.cx - dx * 0.4},${tgt.cy} ${tgt.cx},${tgt.cy}`}
+            fill="none"
+            stroke={isLight ? "rgba(0,0,0,0.1)" : "rgba(255,255,255,0.12)"}
+            strokeWidth={Math.max(2, bw * 0.004)}
+          />
+        );
+      })}
+      {/* Nodes */}
+      {allNodes.map((n) => {
+        const pos = absPos(n);
+        const w = n.measured?.width ?? (n.width as number) ?? 200;
+        const h = n.measured?.height ?? (n.height as number) ?? 120;
+        const color = NODE_COLORS[n.type || ""] || "#6b7280";
+        return (
+          <rect
+            key={n.id}
+            x={pos.x - minX + pad}
+            y={pos.y - minY + pad}
+            width={w}
+            height={h}
+            rx={8}
+            fill={isLight ? "rgba(0,0,0,0.06)" : "rgba(255,255,255,0.08)"}
+            stroke={color}
+            strokeWidth={Math.max(2, bw * 0.004)}
+            strokeOpacity={0.5}
+          />
+        );
+      })}
+    </svg>
+  );
+}
 
 function formatRelativeTime(iso: string): string {
   const now = Date.now();
@@ -77,6 +230,28 @@ export default function HomePage() {
       router.push(`/node/${id}`);
     } catch {
       setCreating(false);
+    }
+  };
+
+  const [creatingTemplate, setCreatingTemplate] = useState<string | null>(null);
+
+  const createFromTemplate = async (template: WorkflowTemplate) => {
+    if (creatingTemplate) return;
+    setCreatingTemplate(template.id);
+    const id = Math.random().toString(36).substring(2, 10);
+    try {
+      await fetch(`/api/workflows/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: template.title,
+          nodes: template.nodes,
+          edges: template.edges,
+        }),
+      });
+      router.push(`/node/${id}`);
+    } catch {
+      setCreatingTemplate(null);
     }
   };
 
@@ -295,9 +470,45 @@ export default function HomePage() {
           </div>
         </div>
 
-        {/* Workflow cards */}
+        {/* Workflow cards / Templates */}
         <div className="px-10 md:px-20 pt-6 pb-20">
-          {loading ? (
+          {activeTab === "Templates" ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-8 gap-y-12">
+              {WORKFLOW_TEMPLATES.map((tpl) => (
+                <div key={tpl.id} className="flex flex-col gap-3.5">
+                  <button
+                    onClick={() => createFromTemplate(tpl)}
+                    disabled={creatingTemplate === tpl.id}
+                    className={`group w-full aspect-[1.3] rounded-2xl border overflow-hidden transition-all disabled:opacity-50 relative ${isLight ? "border-[#f1f1f1] bg-[#f7f7f7] hover:bg-[#efefef]" : "border-white/5 bg-white/3 hover:bg-white/6"}`}
+                  >
+                    {creatingTemplate === tpl.id ? (
+                      <div className="flex items-center justify-center h-full">
+                        <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+                          <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+                        </svg>
+                      </div>
+                    ) : (
+                      <div className="w-full h-full p-3">
+                        <WorkflowMinimap
+                          nodes={tpl.nodes as WfNode[]}
+                          edges={tpl.edges as WfEdge[]}
+                          isLight={isLight}
+                        />
+                      </div>
+                    )}
+                  </button>
+                  <div className="flex flex-col">
+                    <div className={`text-[15px] font-bold ${isLight ? "text-black" : "text-white"}`}>
+                      {tpl.title}
+                    </div>
+                    <div className={`text-[12.5px] mt-0.5 ${isLight ? "text-black/30" : "text-white/30"}`}>
+                      {tpl.description}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : loading ? (
             <div className="flex items-center gap-2 text-neutral-500 py-20 justify-center">
               <svg
                 className="animate-spin h-5 w-5"
@@ -351,7 +562,13 @@ export default function HomePage() {
               </div>
 
               {/* Existing workflows */}
-              {filteredWorkflows.map((wf) => (
+              {filteredWorkflows.map((wf) => {
+                const nodes = wf.nodes ?? [];
+                const edges = wf.edges ?? [];
+                const hasNodes = nodes.length > 0;
+                const firstImage = extractFirstImage(nodes);
+
+                return (
                 <div
                   key={wf.id}
                   className="flex flex-col gap-3.5 group relative"
@@ -359,27 +576,37 @@ export default function HomePage() {
                   <div className="relative">
                     <button
                       onClick={() => router.push(`/node/${wf.id}`)}
-                      className={`group w-full aspect-[1.3] rounded-2xl border overflow-hidden transition-all relative ${isLight ? "border-[#f1f1f1] bg-[#f7f7f7] hover:bg-[#efefef]" : "border-white/5 bg-white/3 hover:bg-white/6"}`}
+                      className={`group/card w-full aspect-[1.3] rounded-2xl border overflow-hidden transition-all relative ${isLight ? "border-[#f1f1f1] bg-[#f7f7f7]" : "border-white/5 bg-white/3"}`}
                     >
-                      <div
-                        className={`h-full w-full flex items-center justify-center transition-colors ${isLight ? "bg-[#f7f7f7] group-hover:bg-[#efefef]" : "bg-white/3 group-hover:bg-white/6"}`}
-                      >
-                        <svg
-                          width="32"
-                          height="32"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="1.5"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          className={
-                            isLight ? "text-black/10" : "text-white/10"
-                          }
-                        >
-                          <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
-                        </svg>
+                      {/* Default view: image or minimap */}
+                      <div className={`absolute inset-0 transition-opacity duration-300 ${firstImage ? "group-hover/card:opacity-0" : ""}`}>
+                        {firstImage ? (
+                          <img
+                            src={firstImage}
+                            alt=""
+                            className="w-full h-full object-cover"
+                          />
+                        ) : hasNodes ? (
+                          <div className="w-full h-full p-3">
+                            <WorkflowMinimap nodes={nodes} edges={edges} isLight={isLight} />
+                          </div>
+                        ) : (
+                          <div className={`h-full w-full flex items-center justify-center ${isLight ? "text-black/10" : "text-white/10"}`}>
+                            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
+                            </svg>
+                          </div>
+                        )}
                       </div>
+
+                      {/* Hover view: minimap (only if there's an image to swap from) */}
+                      {firstImage && hasNodes && (
+                        <div className="absolute inset-0 opacity-0 group-hover/card:opacity-100 transition-opacity duration-300 p-3">
+                          <div className={`w-full h-full rounded-lg ${isLight ? "bg-[#f7f7f7]" : "bg-[#151515]"}`}>
+                            <WorkflowMinimap nodes={nodes} edges={edges} isLight={isLight} />
+                          </div>
+                        </div>
+                      )}
                     </button>
 
                     {/* Three dots menu */}
@@ -409,7 +636,8 @@ export default function HomePage() {
                     </div>
                   </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>

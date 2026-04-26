@@ -18,6 +18,7 @@ import { WorkflowCardNode } from "@/component/flow/WorkflowCardNode";
 import { TextNode } from "@/component/flow/TextNode";
 import { MediaNode } from "@/component/flow/MediaNode";
 import { LLMNode } from "@/component/flow/LLMNode";
+import { GroupNode } from "@/component/flow/GroupNode";
 import { CustomEdge } from "@/component/flow/CustomEdge";
 import { isSameColorFamily } from "@/component/flow/constants";
 import { useTheme } from "@/hooks/useTheme";
@@ -26,6 +27,9 @@ import { TopActions } from "@/component/flow/TopActions";
 import { BottomActions } from "@/component/flow/BottomActions";
 import { SelectionOverlay } from "@/component/flow/SelectionOverlay";
 import { HistorySidebar } from "@/component/flow/HistorySidebar";
+import { CutLine } from "@/component/flow/CutLine";
+import { TemplateOverlay } from "@/component/flow/TemplateOverlay";
+import { WORKFLOW_TEMPLATES, type WorkflowTemplate } from "@/lib/templates";
 
 // Auto-save debounce: 1.5s after last change
 const AUTOSAVE_DELAY = 1500;
@@ -57,13 +61,20 @@ function WorkflowBuilder({ workflowId }: { workflowId: string }) {
     setEdges,
     historyOpen,
     setHistoryOpen,
+    workflowTitle,
+    setWorkflowTitle,
   } = useFlowStore();
 
   const { isLight } = useTheme();
   const { screenToFlowPosition } = useReactFlow();
 
+  const [showTemplateOverlay, setShowTemplateOverlay] = useState(false);
+
   const [contextMenuOpen, setContextMenuOpen] = useState(false);
-  const [contextMenuFlowPos, setContextMenuFlowPos] = useState<{ x: number; y: number } | null>(null);
+  const [contextMenuFlowPos, setContextMenuFlowPos] = useState<{
+    x: number;
+    y: number;
+  } | null>(null);
 
   // --- Load workflow on mount ---
   useEffect(() => {
@@ -72,9 +83,25 @@ function WorkflowBuilder({ workflowId }: { workflowId: string }) {
         const res = await fetch(`/api/workflows/${workflowId}`);
         if (res.ok) {
           const data = await res.json();
-          if (data.nodes) setNodes(data.nodes);
+          if (data.title) setWorkflowTitle(data.title);
+          if (data.nodes && data.nodes.length > 0) {
+            // Ensure parent (group) nodes come before children
+            const sorted = [...data.nodes].sort((a: any, b: any) => {
+              const aIsParent = !a.parentId;
+              const bIsParent = !b.parentId;
+              if (aIsParent && !bIsParent) return -1;
+              if (!aIsParent && bIsParent) return 1;
+              return 0;
+            });
+            setNodes(sorted);
+          } else {
+            setShowTemplateOverlay(true);
+          }
           if (data.edges) setEdges(data.edges);
-        } else if (res.status !== 404) {
+        } else if (res.status === 404) {
+          // New workflow — show template picker
+          setShowTemplateOverlay(true);
+        } else {
           const err = await res.json().catch(() => ({}));
           console.error("[NextFlow] Failed to load workflow:", res.status, err);
         }
@@ -85,7 +112,7 @@ function WorkflowBuilder({ workflowId }: { workflowId: string }) {
       }
     }
     load();
-  }, [workflowId, setNodes, setEdges]);
+  }, [workflowId, setNodes, setEdges, setWorkflowTitle]);
 
   // --- Auto-save when nodes/edges change ---
   useEffect(() => {
@@ -98,7 +125,7 @@ function WorkflowBuilder({ workflowId }: { workflowId: string }) {
         const res = await fetch(`/api/workflows/${workflowId}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ nodes, edges }),
+          body: JSON.stringify({ nodes, edges, title: workflowTitle }),
         });
         if (!res.ok) {
           const err = await res.json().catch(() => ({}));
@@ -117,7 +144,7 @@ function WorkflowBuilder({ workflowId }: { workflowId: string }) {
     return () => {
       if (saveTimer.current) clearTimeout(saveTimer.current);
     };
-  }, [nodes, edges, workflowId]);
+  }, [nodes, edges, workflowId, workflowTitle]);
 
   const isValidConnection = useCallback(
     (connection: Connection | Edge) =>
@@ -146,13 +173,16 @@ function WorkflowBuilder({ workflowId }: { workflowId: string }) {
 
       addNode({ label, model: type }, position);
     },
-    [screenToFlowPosition, addNode]
+    [screenToFlowPosition, addNode],
   );
 
   const onPaneContextMenu = useCallback(
     (event: React.MouseEvent) => {
       event.preventDefault();
-      const flowPos = screenToFlowPosition({ x: event.clientX, y: event.clientY });
+      const flowPos = screenToFlowPosition({
+        x: event.clientX,
+        y: event.clientY,
+      });
       setContextMenuFlowPos(flowPos);
       setContextMenuOpen(true);
     },
@@ -165,6 +195,7 @@ function WorkflowBuilder({ workflowId }: { workflowId: string }) {
       textNode: TextNode,
       mediaNode: MediaNode,
       llmNode: LLMNode,
+      groupNode: GroupNode,
     }),
     [],
   );
@@ -200,7 +231,10 @@ function WorkflowBuilder({ workflowId }: { workflowId: string }) {
           isValidConnection={isValidConnection}
           onDragOver={onDragOver}
           onDrop={onDrop}
-          onPaneClick={() => { setContextMenuOpen(false); setContextMenuFlowPos(null); }}
+          onPaneClick={() => {
+            setContextMenuOpen(false);
+            setContextMenuFlowPos(null);
+          }}
           onPaneContextMenu={onPaneContextMenu}
           panOnDrag={interactionMode === "pan"}
           selectionOnDrag={interactionMode === "select"}
@@ -241,7 +275,34 @@ function WorkflowBuilder({ workflowId }: { workflowId: string }) {
           <SelectionOverlay />
         </ReactFlow>
 
+        <CutLine />
+
+        {showTemplateOverlay && (
+          <TemplateOverlay
+            onDismiss={() => setShowTemplateOverlay(false)}
+            onSelectTemplate={(template) => {
+              // Generate unique IDs so each project has distinct node/edge IDs
+              const idMap = new Map<string, string>();
+              const newNodes = template.nodes.map((n) => {
+                const uid = `node-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+                idMap.set(n.id, uid);
+                return { ...n, id: uid };
+              });
+              const newEdges = template.edges.map((e) => ({
+                ...e,
+                id: `edge-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+                source: idMap.get(e.source) ?? e.source,
+                target: idMap.get(e.target) ?? e.target,
+              }));
+              setNodes(newNodes as any);
+              setEdges(newEdges as any);
+              setShowTemplateOverlay(false);
+            }}
+          />
+        )}
+
         <BottomActions
+          leftOffset={leftOffset}
           externalOpen={contextMenuOpen}
           onExternalOpenChange={(open) => {
             setContextMenuOpen(open);
@@ -251,7 +312,10 @@ function WorkflowBuilder({ workflowId }: { workflowId: string }) {
         />
       </main>
 
-      <HistorySidebar open={historyOpen} onClose={() => setHistoryOpen(false)} />
+      <HistorySidebar
+        open={historyOpen}
+        onClose={() => setHistoryOpen(false)}
+      />
     </div>
   );
 }
