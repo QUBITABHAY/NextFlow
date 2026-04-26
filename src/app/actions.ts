@@ -15,30 +15,31 @@ const TERMINAL_STATUSES = new Set([
   "EXPIRED",
 ]);
 
-// Max seconds a task can stay QUEUED / WAITING_FOR_DEPLOY before we bail
-const QUEUE_TIMEOUT = 15;
-const MAX_POLL = 120;
-
 /**
- * Poll a Trigger.dev run until it completes, fails, or gets stuck in queue.
+ * Check the status of a Trigger.dev run once (single poll).
+ * Called repeatedly from the client side to avoid server action timeouts.
  */
-async function pollRun(
+export async function pollRunStatus(
   runId: string,
   label: string,
-): Promise<{ success: boolean; runId: string; runResult?: string; error?: string }> {
-  let queuedSeconds = 0;
-
-  for (let i = 0; i < MAX_POLL; i++) {
-    await new Promise((r) => setTimeout(r, 1000));
-
+): Promise<{
+  done: boolean;
+  success: boolean;
+  runId: string;
+  runResult?: string;
+  error?: string;
+  status?: string;
+}> {
+  try {
     const run = await runs.retrieve(runId);
 
     if (run.status === "COMPLETED") {
       const output = run.output as any;
       if (output?.success) {
-        return { success: true, runId, runResult: output.result };
+        return { done: true, success: true, runId, runResult: output.result };
       }
       return {
+        done: true,
         success: false,
         runId,
         error: output?.result ?? `${label} completed but produced no output`,
@@ -47,44 +48,34 @@ async function pollRun(
 
     if (TERMINAL_STATUSES.has(run.status)) {
       return {
+        done: true,
         success: false,
         runId,
         error: `${label} ${run.status.toLowerCase()}. Check Trigger.dev dashboard.`,
       };
     }
 
-    // Detect stuck queue — task hasn't started executing
-    if (
-      run.status === "WAITING" ||
-      run.status === "DELAYED" ||
-      run.status === "PENDING_VERSION"
-    ) {
-      queuedSeconds++;
-      if (queuedSeconds >= QUEUE_TIMEOUT) {
-        return {
-          success: false,
-          runId,
-          error: `${label} stuck in queue for ${QUEUE_TIMEOUT}s. Make sure \`trigger dev\` is running.`,
-        };
-      }
-    } else {
-      // Task is executing / reattempting — reset queue counter
-      queuedSeconds = 0;
-    }
+    // Still running / queued
+    return { done: false, success: false, runId, status: run.status };
+  } catch (error: any) {
+    return {
+      done: true,
+      success: false,
+      runId,
+      error: `Failed to check run status: ${error.message}`,
+    };
   }
-
-  return {
-    success: false,
-    runId,
-    error: `${label} timed out after 2 minutes.`,
-  };
 }
 
+/**
+ * Trigger a Trigger.dev task and return the run handle immediately.
+ * Does NOT poll — the caller is responsible for polling via pollRunStatus.
+ */
 export async function triggerNodeAction(
   nodeId: string,
   nodeType: string,
   inputData?: any,
-) {
+): Promise<{ success: boolean; runId: string; error?: string }> {
   try {
     const hasTriggerConfig =
       process.env.TRIGGER_SECRET_KEY &&
@@ -120,7 +111,7 @@ export async function triggerNodeAction(
         cropHeight: inputData?.cropHeight ?? 100,
       });
 
-      return pollRun(handle.id, "Crop task");
+      return { success: true, runId: handle.id };
     }
 
     // Extract Frame → dedicated extract-frame task
@@ -142,7 +133,7 @@ export async function triggerNodeAction(
         frameTimestampMode: inputData?.frameTimestampMode ?? "seconds",
       });
 
-      return pollRun(handle.id, "Extract frame task");
+      return { success: true, runId: handle.id };
     }
 
     // LLM Call → dedicated llm-call task
@@ -161,10 +152,10 @@ export async function triggerNodeAction(
         systemPrompt: inputData?.systemPrompt || undefined,
         userMessage: inputData?.userMessage || inputData?.prompt || "",
         imageUrls: mediaList.length > 0 ? mediaList : undefined,
-        model: inputData?.selectedModel || "gemini-2.0-flash",
+        model: inputData?.selectedModel ?? "",
       });
 
-      return pollRun(handle.id, "LLM call");
+      return { success: true, runId: handle.id };
     }
 
     // All other nodes → generic execute-node-action task
@@ -177,9 +168,9 @@ export async function triggerNodeAction(
       },
     );
 
-    return pollRun(handle.id, "Task");
+    return { success: true, runId: handle.id };
   } catch (error: any) {
     console.error("Trigger error:", error);
-    return { success: false, runId: "", runResult: undefined, error: error.message };
+    return { success: false, runId: "", error: error.message };
   }
 }
