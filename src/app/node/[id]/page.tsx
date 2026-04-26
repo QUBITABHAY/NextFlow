@@ -78,6 +78,11 @@ function WorkflowBuilder({ workflowId }: { workflowId: string }) {
 
   // --- Load workflow on mount ---
   useEffect(() => {
+    isInitialized.current = false;
+    setNodes([]);
+    setEdges([]);
+    setWorkflowTitle("Untitled");
+
     async function load() {
       try {
         const res = await fetch(`/api/workflows/${workflowId}`);

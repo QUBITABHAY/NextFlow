@@ -110,7 +110,7 @@ export function TemplateOverlay({
         className="absolute inset-0 bg-black/10 pointer-events-auto"
         onClick={onDismiss}
       />
-      <div>
+      <div className="relative pointer-events-auto">
         {/* Header */}
         <div className="flex flex-col items-center pt-6 pb-4 px-6">
           <p
@@ -131,13 +131,13 @@ export function TemplateOverlay({
             {/* Empty Workflow card */}
             <button
               onClick={onDismiss}
-              className={`flex-shrink-0 w-[140px] flex flex-col gap-2`}
+              className={`shrink-0 w-[140px] flex flex-col gap-2`}
             >
               <div
                 className={`w-full aspect-[1.3] rounded-xl border flex items-center justify-center transition-all hover:scale-[1.02] ${
                   isLight
-                    ? "border-black/5 bg-black/[0.02] hover:bg-black/[0.04]"
-                    : "border-white/5 bg-white/[0.02] hover:bg-white/[0.05]"
+                    ? "border-black/5 bg-black/2 hover:bg-black/4"
+                    : "border-white/5 bg-white/2 hover:bg-white/5"
                 }`}
               >
                 <div
@@ -169,13 +169,13 @@ export function TemplateOverlay({
               <button
                 key={tpl.id}
                 onClick={() => onSelectTemplate(tpl)}
-                className="flex-shrink-0 w-[140px] flex flex-col gap-2 text-left"
+                className="shrink-0 w-[140px] flex flex-col gap-2 text-left"
               >
                 <div
                   className={`w-full aspect-[1.3] rounded-xl border overflow-hidden transition-all hover:scale-[1.02] ${
                     isLight
-                      ? "border-black/5 bg-black/[0.02] hover:bg-black/[0.04]"
-                      : "border-white/5 bg-white/[0.02] hover:bg-white/[0.05]"
+                      ? "border-black/5 bg-black/2 hover:bg-black/4"
+                      : "border-white/5 bg-white/2 hover:bg-white/5"
                   }`}
                 >
                   <div className="w-full h-full p-2">
