@@ -1,6 +1,7 @@
 import { useFlowStore } from "@/store/useFlowStore";
 import { useTheme } from "@/hooks/useTheme";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
+import { FileCode, Download, Upload } from "lucide-react";
 
 export function TopActions({ leftOffset }: { leftOffset: string }) {
   const toggleTheme = useFlowStore((state) => state.toggleTheme);
@@ -12,18 +13,42 @@ export function TopActions({ leftOffset }: { leftOffset: string }) {
   const setHistoryOpen = useFlowStore((state) => state.setHistoryOpen);
   const workflowTitle = useFlowStore((state) => state.workflowTitle);
   const setWorkflowTitle = useFlowStore((state) => state.setWorkflowTitle);
+  const exportWorkflow = useFlowStore((state) => state.exportWorkflow);
+  const importWorkflow = useFlowStore((state) => state.importWorkflow);
   const { isLight } = useTheme();
 
   const [showToast, setShowToast] = useState(false);
   const [toastMessage, setToastMessage] = useState("");
   const [toastType, setToastType] = useState<"success" | "error">("success");
 
+  const [showFileMenu, setShowFileMenu] = useState(false);
+  const fileMenuRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!showFileMenu) return;
+    function handleClick(e: MouseEvent) {
+      if (
+        fileMenuRef.current &&
+        !fileMenuRef.current.contains(e.target as Node)
+      ) {
+        setShowFileMenu(false);
+      }
+    }
+    document.addEventListener("pointerdown", handleClick, true);
+    return () => document.removeEventListener("pointerdown", handleClick, true);
+  }, [showFileMenu]);
+
+  const fireToast = (message: string, type: "success" | "error") => {
+    setToastMessage(message);
+    setToastType(type);
+    setShowToast(true);
+  };
+
   // Show toast on workflow completion
   useEffect(() => {
     if (!isWorkflowRunning && workflowError) {
-      setToastMessage(workflowError);
-      setToastType("error");
-      setShowToast(true);
+      fireToast(workflowError, "error");
     }
   }, [isWorkflowRunning, workflowError]);
 
@@ -34,6 +59,19 @@ export function TopActions({ leftOffset }: { leftOffset: string }) {
       return () => clearTimeout(t);
     }
   }, [showToast]);
+
+  const handleImportFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const result = await importWorkflow(file);
+    if (result.success) {
+      fireToast("Workflow imported successfully", "success");
+    } else {
+      fireToast(result.error ?? "Import failed", "error");
+    }
+    e.target.value = "";
+    setShowFileMenu(false);
+  };
 
   return (
     <>
@@ -55,6 +93,61 @@ export function TopActions({ leftOffset }: { leftOffset: string }) {
       </div>
 
       <div className="absolute top-4 right-4 z-40 flex items-center gap-2">
+        {/* Export / Import Dropdown */}
+        <div className="relative" ref={fileMenuRef}>
+          <button
+            onClick={() => setShowFileMenu((v) => !v)}
+            className={`h-9 w-9 rounded-xl border flex items-center justify-center transition-all shadow-sm ${showFileMenu ? (isLight ? "border-blue-400/30 bg-blue-500/10 text-blue-600" : "border-blue-500/30 bg-blue-500/10 text-blue-400") : isLight ? "border-black/5 bg-white text-black/60 hover:bg-black/5" : "border-[#1f1f1f] bg-[#0f0f0f] text-white/70 hover:bg-white/10 hover:text-white"}`}
+            title="Export / Import workflow"
+          >
+            <FileCode size={16} strokeWidth={2} />
+          </button>
+
+          {showFileMenu && (
+            <div
+              className={`absolute right-0 top-full mt-2 w-[200px] rounded-xl border overflow-hidden shadow-xl animate-in fade-in zoom-in-95 duration-150 ${isLight ? "bg-white border-black/10" : "bg-[#1a1a1a] border-[#2a2a2a]"}`}
+            >
+              <div
+                className={`px-3 pt-2.5 pb-1.5 text-[10px] font-semibold tracking-wider uppercase ${isLight ? "text-black/35" : "text-white/30"}`}
+              >
+                Workflow File
+              </div>
+
+              <div className="px-1.5 pb-2">
+                {/* Export */}
+                <button
+                  onClick={() => {
+                    exportWorkflow();
+                    fireToast("Workflow exported", "success");
+                    setShowFileMenu(false);
+                  }}
+                  className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors text-[13px] font-medium ${isLight ? "hover:bg-black/5 text-black/80" : "hover:bg-white/8 text-white/80"}`}
+                >
+                  <Download size={15} strokeWidth={2} className="shrink-0" />
+                  Export as JSON
+                </button>
+
+                {/* Import */}
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors text-[13px] font-medium ${isLight ? "hover:bg-black/5 text-black/80" : "hover:bg-white/8 text-white/80"}`}
+                >
+                  <Upload size={15} strokeWidth={2} className="shrink-0" />
+                  Import from JSON
+                </button>
+              </div>
+
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".json,application/json"
+                className="hidden"
+                onChange={handleImportFile}
+              />
+            </div>
+          )}
+        </div>
+
         {/* Theme Toggle */}
         <button
           onClick={toggleTheme}
@@ -115,9 +208,7 @@ export function TopActions({ leftOffset }: { leftOffset: string }) {
               await runWorkflow();
               const err = useFlowStore.getState().workflowError;
               if (!err) {
-                setToastMessage("Workflow completed successfully");
-                setToastType("success");
-                setShowToast(true);
+                fireToast("Workflow completed successfully", "success");
               }
             }}
             className={`h-9 rounded-xl border text-xs font-medium px-4 transition-all shadow-sm flex items-center gap-2 ${isLight ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-700 hover:bg-emerald-500/20" : "border-emerald-500/30 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 hover:text-emerald-300"}`}

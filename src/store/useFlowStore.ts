@@ -91,6 +91,10 @@ export type FlowState = {
   ungroupNode: (groupId: string) => void;
   changeGroupColor: (groupId: string, color: string) => void;
   runGroupNodes: (groupId: string) => Promise<void>;
+
+  // Export / Import
+  exportWorkflow: () => void;
+  importWorkflow: (file: File) => Promise<{ success: boolean; error?: string }>;
 };
 
 /** Push the current state into the past stack, clear future. */
@@ -758,5 +762,78 @@ export const useFlowStore = create<FlowState>((set, get) => ({
       workflowError: result.success ? null : (result.error ?? "Unknown error"),
       workflowAbort: null,
     });
+  },
+
+  exportWorkflow: () => {
+    const { nodes, edges, workflowTitle } = get();
+    const payload = {
+      version: 1,
+      title: workflowTitle || "Untitled",
+      exportedAt: new Date().toISOString(),
+      nodes: nodes.map(({ id, type, position, data, parentId, extent, style }) => ({
+        id,
+        type,
+        position,
+        data,
+        ...(parentId ? { parentId } : {}),
+        ...(extent ? { extent } : {}),
+        ...(style ? { style } : {}),
+      })),
+      edges: edges.map(({ id, source, target, sourceHandle, targetHandle, type, style }) => ({
+        id,
+        source,
+        target,
+        ...(sourceHandle ? { sourceHandle } : {}),
+        ...(targetHandle ? { targetHandle } : {}),
+        ...(type ? { type } : {}),
+        ...(style ? { style } : {}),
+      })),
+    };
+
+    const blob = new Blob([JSON.stringify(payload, null, 2)], {
+      type: "application/json",
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${(workflowTitle || "workflow").replace(/[^a-zA-Z0-9_-]/g, "_")}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  },
+
+  importWorkflow: async (file: File) => {
+    try {
+      const text = await file.text();
+      const data = JSON.parse(text);
+
+      // Validate structure
+      if (!data || typeof data !== "object") {
+        return { success: false, error: "Invalid JSON file." };
+      }
+      if (!Array.isArray(data.nodes) || !Array.isArray(data.edges)) {
+        return { success: false, error: "Missing nodes or edges array." };
+      }
+
+      // Validate each node has required fields
+      for (const node of data.nodes) {
+        if (!node.id || !node.position || typeof node.position.x !== "number" || typeof node.position.y !== "number") {
+          return { success: false, error: `Invalid node: ${node.id ?? "unknown"}` };
+        }
+      }
+
+      pushHistory(get, set);
+
+      set({
+        nodes: data.nodes,
+        edges: data.edges,
+        ...(data.title ? { workflowTitle: data.title } : {}),
+      });
+
+      return { success: true };
+    } catch (e: any) {
+      return { success: false, error: e.message || "Failed to parse JSON file." };
+    }
   },
 }));
