@@ -2,45 +2,39 @@ import { logger, task } from "@trigger.dev/sdk/v3";
 import { Transloadit } from "transloadit";
 import { exec } from "child_process";
 import { promisify } from "util";
-import fs from "fs";
+import fs from "fs/promises";
+import { createWriteStream } from "fs";
+import { pipeline } from "stream/promises";
+import { Readable } from "stream";
 import path from "path";
 import os from "os";
-import https from "https";
-import http from "http";
 
 const execAsync = promisify(exec);
 
-function downloadToFile(url: string, dest: string): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const client = url.startsWith("https") ? https : http;
-    client
-      .get(url, (res) => {
-        if (
-          res.statusCode &&
-          res.statusCode >= 300 &&
-          res.statusCode < 400 &&
-          res.headers.location
-        ) {
-          downloadToFile(res.headers.location, dest).then(resolve, reject);
-          return;
-        }
-        if (!res.statusCode || res.statusCode >= 400) {
-          reject(new Error(`Failed to download video: HTTP ${res.statusCode}`));
-          return;
-        }
-        const ws = fs.createWriteStream(dest);
-        res.pipe(ws);
-        ws.on("finish", () => ws.close(() => resolve()));
-        ws.on("error", reject);
-      })
-      .on("error", reject);
-  });
+async function downloadVideo(url: string, destPath: string) {
+  logger.info(`Starting download from ${url}`);
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(
+      `Failed to download video: ${response.status} ${response.statusText}`,
+    );
+  }
+
+  if (!response.body) {
+    throw new Error("Response body is empty");
+  }
+
+  const fileStream = createWriteStream(destPath);
+  await pipeline(Readable.fromWeb(response.body as any), fileStream);
+  logger.info("Download completed successfully.");
 }
 
 export const extractFrame = task({
   id: "extract-frame",
+  machine: "large-1x",
+  maxDuration: 120,
   retry: {
-    maxAttempts: 3,
+    maxAttempts: 2,
   },
   run: async (payload: {
     nodeId: string;
@@ -48,87 +42,67 @@ export const extractFrame = task({
     frameTimestamp: number;
     frameTimestampMode: "seconds" | "percentage";
   }) => {
-    logger.info("Starting extract frame task", {
-      nodeId: payload.nodeId,
-      frameTimestamp: payload.frameTimestamp,
-      frameTimestampMode: payload.frameTimestampMode,
-    });
+    logger.info("Extract frame task started", { payload });
 
     const tmpDir = os.tmpdir();
     const inputPath = path.join(
       tmpDir,
-      `frame_input_${payload.nodeId}_${Date.now()}.mp4`,
+      `input_${payload.nodeId}_${Date.now()}.mp4`,
     );
     const outputPath = path.join(
       tmpDir,
-      `frame_output_${payload.nodeId}_${Date.now()}.png`,
+      `output_${payload.nodeId}_${Date.now()}.png`,
     );
 
     try {
-      logger.info("Downloading input video...");
-      await downloadToFile(payload.videoUrl, inputPath);
-      const fileSize = fs.statSync(inputPath).size;
-      logger.info("Video downloaded", { size: fileSize });
+      // 1. Download video efficiently
+      await downloadVideo(payload.videoUrl, inputPath);
 
-      // Always probe duration first to clamp seek position
-      let seekSeconds = payload.frameTimestamp;
+      const stats = await fs.stat(inputPath);
+      logger.info(`Video saved to disk`, { sizeBytes: stats.size });
+
+      // 2. Determine video duration
       logger.info("Probing video duration...");
-      const { stdout: durationOutput } = await execAsync(
-        `ffprobe -v error -show_entries format=duration -of csv=p=0 "${inputPath}"`,
-      );
-      const duration = parseFloat(durationOutput.trim());
-      logger.info("Video duration", { duration });
+      const probeCmd = `ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${inputPath}"`;
+      const { stdout: probeOutput } = await execAsync(probeCmd);
+      const duration = parseFloat(probeOutput.trim());
 
+      if (isNaN(duration) || duration <= 0) {
+        throw new Error("Failed to determine valid video duration.");
+      }
+      logger.info(`Video duration determined: ${duration}s`);
+
+      // 3. Calculate seek time
+      let seekSeconds = 0;
       if (payload.frameTimestampMode === "percentage") {
-        if (isNaN(duration) || duration <= 0) {
-          throw new Error("Could not determine video duration");
-        }
         seekSeconds = (payload.frameTimestamp / 100) * duration;
       } else {
-        // Clamp seek to [0, duration - 0.1] so we never seek past the end
-        if (!isNaN(duration) && duration > 0) {
-          seekSeconds = Math.min(seekSeconds, Math.max(0, duration - 0.1));
-        }
+        seekSeconds = payload.frameTimestamp;
       }
 
-      logger.info("Calculated seek position", { seekSeconds });
+      seekSeconds = Math.max(0, Math.min(seekSeconds, duration - 0.1));
+      logger.info(`Calculated seek time: ${seekSeconds.toFixed(3)}s`);
 
-      // Use accurate seek (-ss after -i) to guarantee a frame is available
-      const ffmpegCmd = `ffmpeg -y -i "${inputPath}" -ss ${seekSeconds.toFixed(3)} -vframes 1 -q:v 2 -f image2 "${outputPath}"`;
-      logger.info("Running ffmpeg", { command: ffmpegCmd });
+      const ffmpegCmd = `ffmpeg -nostdin -v error -y -ss ${seekSeconds.toFixed(3)} -i "${inputPath}" -frames:v 1 -q:v 2 "${outputPath}"`;
+      logger.info(`Executing ffmpeg: ${ffmpegCmd}`);
 
-      const { stderr } = await execAsync(ffmpegCmd);
-      logger.info("ffmpeg output", { stderr: stderr.slice(0, 500) });
+      await execAsync(ffmpegCmd, { maxBuffer: 1024 * 1024 * 10 });
 
-      if (!fs.existsSync(outputPath)) {
-        // Fallback: extract first frame
-        logger.warn("Seek produced no output, falling back to first frame");
-        const fallbackCmd = `ffmpeg -y -i "${inputPath}" -vframes 1 -q:v 2 -f image2 "${outputPath}"`;
-        await execAsync(fallbackCmd);
-      }
-
-      if (!fs.existsSync(outputPath)) {
-        throw new Error("ffmpeg did not produce output file");
-      }
-
-      const outputSize = fs.statSync(outputPath).size;
-      logger.info("Frame extracted, uploading to Transloadit...", {
-        outputSize,
-      });
+      const outStats = await fs.stat(outputPath);
+      logger.info(`Frame extracted successfully`, { sizeBytes: outStats.size });
 
       const authKey = process.env.NEXT_PUBLIC_TRANSLOADIT_KEY;
       const authSecret = process.env.TRANSLOADIT_SECRET;
 
       if (!authKey || !authSecret) {
-        throw new Error(
-          "Transloadit credentials not configured. Set NEXT_PUBLIC_TRANSLOADIT_KEY and TRANSLOADIT_SECRET.",
-        );
+        throw new Error("Transloadit credentials missing from environment.");
       }
 
+      logger.info("Uploading extracted frame to Transloadit...");
       const transloadit = new Transloadit({ authKey, authSecret });
 
       const assembly = await transloadit.createAssembly({
-        files: { file: outputPath },
+        files: { frame: outputPath },
         params: {
           steps: {
             ":original": { robot: "/upload/handle" },
@@ -145,31 +119,27 @@ export const extractFrame = task({
 
       if (!uploadedUrl) {
         throw new Error(
-          `Transloadit assembly completed but no URL found. Status: ${assembly.ok}`,
+          `Upload failed. Transloadit assembly status: ${assembly.ok}`,
         );
       }
 
-      logger.info("Uploaded to Transloadit", { url: uploadedUrl });
-
+      logger.info(`Upload complete: ${uploadedUrl}`);
       return {
         success: true,
         result: uploadedUrl,
         timestamp: new Date().toISOString(),
       };
     } catch (error: any) {
-      logger.error("Frame extraction failed", { error: error.message });
-      return {
-        success: false,
-        result: `Frame extraction failed: ${error.message}`,
-        timestamp: new Date().toISOString(),
-      };
+      logger.error(`Task failed: ${error.message}`, { stack: error.stack });
+      throw error;
     } finally {
+      logger.info("Cleaning up temporary files...");
       try {
-        fs.unlinkSync(inputPath);
-      } catch {}
-      try {
-        fs.unlinkSync(outputPath);
-      } catch {}
+        await fs.unlink(inputPath).catch(() => {});
+        await fs.unlink(outputPath).catch(() => {});
+      } catch (cleanupError) {
+        logger.warn("Failed to cleanup files", { cleanupError });
+      }
     }
   },
 });
