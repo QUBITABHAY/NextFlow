@@ -8,6 +8,8 @@ import {
 import { useFlowStore } from "@/store/useFlowStore";
 import { useTheme } from "@/hooks/useTheme";
 import { useState, useEffect } from "react";
+import { triggerNodeAction, pollRunStatus } from "@/app/actions";
+import { useNodeRunRecorder } from "@/hooks/useNodeRunRecorder";
 
 const GEMINI_MODELS = [
   { id: "gemini-2.5-flash", label: "Gemini 2.5 Flash" },
@@ -30,6 +32,7 @@ export function LLMNode({ id, data, selected }: NodeProps<Node<LLMNodeData>>) {
   const { isLight } = useTheme();
   const [showModelMenu, setShowModelMenu] = useState(false);
   const updateNodeInternals = useUpdateNodeInternals();
+  const { recordSingleNodeRun } = useNodeRunRecorder();
 
   const getTextNodeForHandle = (handleId: string) => {
     for (const edge of edges) {
@@ -60,6 +63,156 @@ export function LLMNode({ id, data, selected }: NodeProps<Node<LLMNodeData>>) {
 
   const accentColor = "#a855f7";
 
+  const handleRun = async () => {
+    const systemPrompt = systemConnected
+      ? connectedSystemText
+      : data.systemPrompt;
+    let userMessage = userConnected ? connectedUserText : data.userMessage;
+
+    const connectedEdges = edges.filter((e) => e.target === id);
+    const upstreamLLMTexts: string[] = [];
+    const upstreamImageUrls: string[] = [];
+
+    for (const edge of connectedEdges) {
+      const srcNode = nodes.find((n) => n.id === edge.source);
+      if (!srcNode) continue;
+      const result = (srcNode.data as any)?.runResult as string | undefined;
+      if (!result) continue;
+
+      if (srcNode.type === "llmNode") {
+        upstreamLLMTexts.push(result);
+      } else if (srcNode.type === "workflowCard") {
+        if (result.startsWith("http") || result.startsWith("data:image")) {
+          upstreamImageUrls.push(result);
+        } else {
+          upstreamLLMTexts.push(result);
+        }
+      }
+    }
+
+    if (upstreamLLMTexts.length > 0) {
+      const extra = upstreamLLMTexts.join("\n");
+      userMessage = userMessage ? `${userMessage}\n\n${extra}` : extra;
+    }
+
+    if (!data.selectedModel) {
+      updateNodeData(id, {
+        runResult: "Please select a model before running.",
+      });
+      return;
+    }
+
+    if (!userMessage) {
+      updateNodeData(id, {
+        runResult:
+          "User message is required. Type a message or connect a Text node.",
+      });
+      return;
+    }
+
+    updateNodeData(id, { isRunning: true, runResult: null });
+
+    const inputSummary = [systemPrompt, userMessage]
+      .filter(Boolean)
+      .join(" | ");
+
+    await recordSingleNodeRun(
+      id,
+      "LLM Call",
+      "LLM Call",
+      inputSummary,
+      async () => {
+        try {
+          // 1. Trigger the task — returns immediately with a runId
+          const triggerResponse = await triggerNodeAction(id, "LLM Call", {
+            systemPrompt,
+            userMessage,
+            prompt: userMessage,
+            selectedModel: data.selectedModel,
+            ...(upstreamImageUrls.length > 0 && {
+              imageUrls: upstreamImageUrls,
+            }),
+          });
+
+          if (!triggerResponse.success || !triggerResponse.runId) {
+            updateNodeData(id, {
+              isRunning: false,
+              runResult: triggerResponse.error || "Failed to trigger task",
+            });
+            return {
+              success: false,
+              error: triggerResponse.error || "Failed to trigger task",
+            };
+          }
+
+          // 2. Poll from the client side until done (no server action timeout)
+          const runId = triggerResponse.runId;
+          const MAX_POLLS = 180;
+          let queuedPolls = 0;
+          const QUEUE_LIMIT = 30;
+
+          for (let i = 0; i < MAX_POLLS; i++) {
+            await new Promise((r) => setTimeout(r, 2000));
+
+            const status = await pollRunStatus(runId, "LLM Call");
+
+            if (status.done) {
+              if (status.success) {
+                updateNodeData(id, {
+                  isRunning: false,
+                  runResult: status.runResult,
+                });
+                return { success: true, output: status.runResult };
+              } else {
+                updateNodeData(id, {
+                  isRunning: false,
+                  runResult: status.error || "Task failed",
+                });
+                return {
+                  success: false,
+                  error: status.error || "Task failed",
+                };
+              }
+            }
+
+            // Detect stuck in queue
+            if (
+              status.status === "QUEUED" ||
+              status.status === "WAITING" ||
+              status.status === "PENDING_VERSION"
+            ) {
+              queuedPolls++;
+              if (queuedPolls >= QUEUE_LIMIT) {
+                updateNodeData(id, {
+                  isRunning: false,
+                  runResult: `Task stuck in queue. Make sure the worker is running.`,
+                });
+                return {
+                  success: false,
+                  error: `Task stuck in queue. Make sure \`trigger dev\` is running.`,
+                };
+              }
+            } else {
+              queuedPolls = 0;
+            }
+          }
+
+          updateNodeData(id, {
+            isRunning: false,
+            runResult: "Task timed out after 6 minutes",
+          });
+          return { success: false, error: "Task timed out after 6 minutes" };
+        } catch (err: any) {
+          updateNodeData(id, {
+            isRunning: false,
+            runResult: err.message || "Unexpected error",
+          });
+          return { success: false, error: err.message || "Unexpected error" };
+        }
+      },
+    );
+  };
+
   return (
     <div className="relative font-(--font-space-grotesk)">
       <div className="absolute top-[-28px] left-3 flex items-center gap-2">
@@ -80,6 +233,36 @@ export function LLMNode({ id, data, selected }: NodeProps<Node<LLMNodeData>>) {
         >
           LLM Call
         </span>
+        <button
+          onClick={handleRun}
+          disabled={data.isRunning}
+          className={`ml-3 px-2 py-0.5 rounded-md transition-all flex items-center gap-1.5 border ${
+            isLight
+              ? "bg-black/5 border-black/5 hover:bg-black/10 text-black/60"
+              : "bg-white/5 border-white/5 hover:bg-white/10 text-white/60"
+          } ${data.isRunning ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
+        >
+          {data.isRunning ? (
+            <svg
+              className="animate-spin"
+              width="10"
+              height="10"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="3"
+            >
+              <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+            </svg>
+          ) : (
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
+              <polygon points="5 3 19 12 5 21 5 3" />
+            </svg>
+          )}
+          <span className="text-[11px] font-bold uppercase tracking-wider">
+            Run Node
+          </span>
+        </button>
       </div>
 
       {/* Main Card */}
@@ -310,7 +493,7 @@ export function LLMNode({ id, data, selected }: NodeProps<Node<LLMNodeData>>) {
 
         {/* Response Output */}
         {data.runResult && !data.isRunning && (
-          <div>
+          <div className="mb-3">
             <label
               className={`block text-[11px] font-semibold tracking-wider uppercase mb-1.5 px-1 ${isLight ? "text-black/40" : "text-white/30"}`}
             >
