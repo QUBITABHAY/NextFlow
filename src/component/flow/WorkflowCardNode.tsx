@@ -1,6 +1,6 @@
 import { Handle, Position, type Node, type NodeProps } from "@xyflow/react";
 import { WorkflowNodeData } from "./types";
-import { triggerNodeAction } from "@/app/actions";
+import { triggerNodeAction, pollRunStatus } from "@/app/actions";
 import { useFlowStore } from "@/store/useFlowStore";
 import { useTheme } from "@/hooks/useTheme";
 import { useState, useRef, useCallback, useEffect } from "react";
@@ -246,7 +246,7 @@ export function WorkflowCardNode({
       };
     });
 
-    const combinedPrompt =
+    let combinedPrompt =
       connectedInputs
         .filter((input) => input.nodeType === "textNode")
         .map((input) => (input.data as any)?.text)
@@ -259,7 +259,7 @@ export function WorkflowCardNode({
       )
       .map((input) => (input.data as any)?.url);
 
-    // Also pick up outputs from connected workflow nodes (e.g. Extract Frame → Crop Image)
+    // Pick up URL outputs from connected workflowCard nodes (e.g. Extract Frame → Crop Image)
     connectedInputs
       .filter((input) => {
         const result = (input.data as any)?.runResult;
@@ -270,6 +270,22 @@ export function WorkflowCardNode({
         );
       })
       .forEach((input) => mediaInputs.push((input.data as any).runResult));
+
+    connectedInputs
+      .filter((input) => {
+        const result = (input.data as any)?.runResult;
+        return input.nodeType === "llmNode" && result;
+      })
+      .forEach((input) => {
+        const result = (input.data as any).runResult as string;
+        if (result.startsWith("http") || result.startsWith("data:image")) {
+          mediaInputs.push(result);
+        } else {
+          combinedPrompt = combinedPrompt
+            ? `${combinedPrompt}\n${result}`
+            : result;
+        }
+      });
 
     if (isExtractFrameNode && data.uploadedVideoUrl) {
       mediaInputs.unshift(data.uploadedVideoUrl);
@@ -289,7 +305,8 @@ export function WorkflowCardNode({
       inputSummary,
       async () => {
         try {
-          const response = await triggerNodeAction(id, nodeTypeLabel, {
+          // 1. Trigger the task — returns immediately with a runId
+          const triggerResponse = await triggerNodeAction(id, nodeTypeLabel, {
             prompt: combinedPrompt,
             media: mediaInputs,
             ...(isCropNode && {
@@ -304,21 +321,79 @@ export function WorkflowCardNode({
             }),
           });
 
-          if (response.success) {
+          if (!triggerResponse.success || !triggerResponse.runId) {
             updateNodeData(id, {
               isRunning: false,
-              runResult: response.runResult,
-              inputBadge: "Success",
-            });
-            return { success: true, output: response.runResult };
-          } else {
-            updateNodeData(id, {
-              isRunning: false,
-              runResult: response.error || "Task failed",
+              runResult: triggerResponse.error || "Failed to trigger task",
               inputBadge: "Failed",
             });
-            return { success: false, error: response.error || "Task failed" };
+            return {
+              success: false,
+              error: triggerResponse.error || "Failed to trigger task",
+            };
           }
+
+          // 2. Poll from the client side until done (no server action timeout)
+          const runId = triggerResponse.runId;
+          const MAX_POLLS = 180;
+          let queuedPolls = 0;
+          const QUEUE_LIMIT = 30;
+
+          for (let i = 0; i < MAX_POLLS; i++) {
+            await new Promise((r) => setTimeout(r, 2000));
+
+            const status = await pollRunStatus(runId, nodeTypeLabel);
+
+            if (status.done) {
+              if (status.success) {
+                updateNodeData(id, {
+                  isRunning: false,
+                  runResult: status.runResult,
+                  inputBadge: "Success",
+                });
+                return { success: true, output: status.runResult };
+              } else {
+                updateNodeData(id, {
+                  isRunning: false,
+                  runResult: status.error || "Task failed",
+                  inputBadge: "Failed",
+                });
+                return {
+                  success: false,
+                  error: status.error || "Task failed",
+                };
+              }
+            }
+
+            // Detect stuck in queue
+            if (
+              status.status === "QUEUED" ||
+              status.status === "WAITING" ||
+              status.status === "PENDING_VERSION"
+            ) {
+              queuedPolls++;
+              if (queuedPolls >= QUEUE_LIMIT) {
+                updateNodeData(id, {
+                  isRunning: false,
+                  runResult: `Task stuck in queue for ${QUEUE_LIMIT * 2}s. Make sure the worker is running.`,
+                  inputBadge: "Failed",
+                });
+                return {
+                  success: false,
+                  error: `Task stuck in queue. Make sure \`trigger dev\` is running.`,
+                };
+              }
+            } else {
+              queuedPolls = 0;
+            }
+          }
+
+          updateNodeData(id, {
+            isRunning: false,
+            runResult: "Task timed out after 6 minutes",
+            inputBadge: "Failed",
+          });
+          return { success: false, error: "Task timed out after 6 minutes" };
         } catch (err: any) {
           updateNodeData(id, {
             isRunning: false,
