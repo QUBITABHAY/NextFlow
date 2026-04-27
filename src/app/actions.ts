@@ -68,7 +68,25 @@ export async function pollRunStatus(
 }
 
 /**
- * Trigger a Trigger.dev task and return the run handle immediately.
+ * Cancel a running task.
+ */
+export async function cancelRun(
+  runId: string,
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const run = await runs.retrieve(runId);
+    if (!TERMINAL_STATUSES.has(run.status) && run.status !== "COMPLETED") {
+      await runs.cancel(runId);
+    }
+    return { success: true };
+  } catch (error: any) {
+    console.error("Failed to cancel run:", error);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Trigger a task and return the run handle immediately.
  * Does NOT poll — the caller is responsible for polling via pollRunStatus.
  */
 export async function triggerNodeAction(
@@ -142,7 +160,8 @@ export async function triggerNodeAction(
         return {
           success: false,
           runId: "",
-          error: "User message is required. Type a message or connect a Text node.",
+          error:
+            "User message is required. Type a message or connect a Text node.",
         };
       }
 

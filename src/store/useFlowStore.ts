@@ -15,7 +15,11 @@ import {
 } from "@xyflow/react";
 import { PaletteItem } from "@/component/flow/types";
 import { getStrokeColor } from "@/component/flow/constants";
-import { executeWorkflow, type RunTracker } from "@/lib/workflowExecutor";
+import {
+  executeWorkflow,
+  cancelAllActiveRuns,
+  type RunTracker,
+} from "@/lib/workflowExecutor";
 import {
   createWorkflowRun,
   createNodeRun,
@@ -401,7 +405,9 @@ export const useFlowStore = create<FlowState>((set, get) => ({
     const { nodes, edges, isWorkflowRunning, workflowId } = get();
     if (isWorkflowRunning) return;
 
-    const selectedIds = new Set(nodes.filter((n) => n.selected).map((n) => n.id));
+    const selectedIds = new Set(
+      nodes.filter((n) => n.selected).map((n) => n.id),
+    );
     if (selectedIds.size === 0) return;
 
     // Include selected nodes + any non-executable source nodes they depend on (text, media)
@@ -486,11 +492,27 @@ export const useFlowStore = create<FlowState>((set, get) => ({
   stopWorkflow: () => {
     const { workflowAbort } = get();
     workflowAbort?.abort();
+    cancelAllActiveRuns();
     set({
       isWorkflowRunning: false,
       workflowError: "Workflow stopped by user.",
       workflowAbort: null,
     });
+    set((state) => ({
+      nodes: state.nodes.map((n) =>
+        (n.data as any).isRunning
+          ? {
+              ...n,
+              data: {
+                ...n.data,
+                isRunning: false,
+                inputBadge: "Failed",
+                runResult: "Stopped by user.",
+              },
+            }
+          : n,
+      ),
+    }));
   },
 
   tidyUpSelectedNodes: () => {
@@ -543,12 +565,18 @@ export const useFlowStore = create<FlowState>((set, get) => ({
 
     // Random pastel-ish color
     const GROUP_COLORS = [
-      "#a855f7", "#3b82f6", "#ef4444", "#22c55e",
-      "#f59e0b", "#ec4899", "#06b6d4", "#8b5cf6",
-      "#14b8a6", "#f97316",
+      "#a855f7",
+      "#3b82f6",
+      "#ef4444",
+      "#22c55e",
+      "#f59e0b",
+      "#ec4899",
+      "#06b6d4",
+      "#8b5cf6",
+      "#14b8a6",
+      "#f97316",
     ];
-    const color =
-      GROUP_COLORS[Math.floor(Math.random() * GROUP_COLORS.length)];
+    const color = GROUP_COLORS[Math.floor(Math.random() * GROUP_COLORS.length)];
 
     // Count existing groups for naming
     const groupCount = nodes.filter((n) => n.type === "groupNode").length;
@@ -641,9 +669,7 @@ export const useFlowStore = create<FlowState>((set, get) => ({
   changeGroupColor: (groupId: string, color: string) => {
     set((state) => ({
       nodes: state.nodes.map((n) =>
-        n.id === groupId
-          ? { ...n, data: { ...n.data, color } }
-          : n,
+        n.id === groupId ? { ...n, data: { ...n.data, color } } : n,
       ),
     }));
   },

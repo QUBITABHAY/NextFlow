@@ -1,5 +1,17 @@
 import type { Node, Edge } from "@xyflow/react";
-import { triggerNodeAction, pollRunStatus } from "@/app/actions";
+import { triggerNodeAction, pollRunStatus, cancelRun } from "@/app/actions";
+
+const activeRunIds = new Set<string>();
+
+/**
+ * Cancel all currently active Trigger.dev runs.
+ * Called from stopWorkflow in the store.
+ */
+export async function cancelAllActiveRuns() {
+  const ids = [...activeRunIds];
+  activeRunIds.clear();
+  await Promise.allSettled(ids.map((id) => cancelRun(id)));
+}
 
 type UpdateNodeData = (nodeId: string, data: any) => void;
 
@@ -252,6 +264,7 @@ async function executeNode(
   edges: Edge[],
   updateNodeData: UpdateNodeData,
   tracker?: RunTracker,
+  abortSignal?: AbortSignal,
 ): Promise<boolean> {
   const node = nodes.find((n) => n.id === nodeId);
   if (!node) return false;
@@ -312,16 +325,70 @@ async function executeNode(
     }
 
     const runId = triggerResponse.runId;
+    activeRunIds.add(runId);
     const MAX_POLLS = 180;
     let queuedPolls = 0;
     const QUEUE_LIMIT = 30;
 
     for (let i = 0; i < MAX_POLLS; i++) {
-      await new Promise((r) => setTimeout(r, 2000));
+      if (abortSignal?.aborted) {
+        activeRunIds.delete(runId);
+        await cancelRun(runId);
+        const duration = Date.now() - startTime;
+        updateNodeData(nodeId, {
+          isRunning: false,
+          runResult: "Stopped by user.",
+          inputBadge: "Failed",
+        });
+        if (tracker && nodeRunId)
+          await tracker.onNodeFinish(
+            nodeRunId,
+            false,
+            duration,
+            undefined,
+            "Stopped by user.",
+          );
+        return false;
+      }
+
+      await new Promise<void>((r) => {
+        if (abortSignal?.aborted) return r();
+        const tid = setTimeout(() => {
+          abortSignal?.removeEventListener("abort", onAbort);
+          r();
+        }, 2000);
+        function onAbort() {
+          clearTimeout(tid);
+          r();
+        }
+        abortSignal?.addEventListener("abort", onAbort, { once: true });
+      });
+
+      // Check abort after sleeping
+      if (abortSignal?.aborted) {
+        activeRunIds.delete(runId);
+        await cancelRun(runId);
+        const duration = Date.now() - startTime;
+        updateNodeData(nodeId, {
+          isRunning: false,
+          runResult: "Stopped by user.",
+          inputBadge: "Failed",
+        });
+        if (tracker && nodeRunId)
+          await tracker.onNodeFinish(
+            nodeRunId,
+            false,
+            duration,
+            undefined,
+            "Stopped by user.",
+          );
+        return false;
+      }
 
       const status = await pollRunStatus(runId, nodeTypeLabel);
 
       if (status.done) {
+        activeRunIds.delete(runId);
         const duration = Date.now() - startTime;
         if (status.success) {
           updateNodeData(nodeId, {
@@ -509,6 +576,7 @@ export async function executeWorkflow(
           edges,
           updateNodeData,
           tracker,
+          abortSignal,
         ).then((success) => {
           running--;
 
