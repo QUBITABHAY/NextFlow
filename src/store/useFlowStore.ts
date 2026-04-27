@@ -290,7 +290,7 @@ export const useFlowStore = create<FlowState>((set, get) => ({
       newNodeData = {
         systemPrompt: "",
         userMessage: "",
-        selectedModel: "gemini-2.0-flash",
+        selectedModel: "",
       };
     } else {
       newNodeData = {

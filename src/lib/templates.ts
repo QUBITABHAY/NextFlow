@@ -127,13 +127,13 @@ const llmVisionChat: WorkflowTemplate = {
       id: "txt-sys-1",
       type: "textNode",
       position: { x: 0, y: 0 },
-      data: { text: "" },
+      data: { text: "You are a professional marketing copywriter. Generate a compelling one-paragraph product description." },
     },
     {
       id: "txt-usr-1",
       type: "textNode",
       position: { x: 0, y: 200 },
-      data: { text: "" },
+      data: { text: "Product: Wireless Bluetooth Headphones. Features: Noise cancellation, 30-h battery, foldable design." },
     },
     {
       id: "img-1",
@@ -148,7 +148,7 @@ const llmVisionChat: WorkflowTemplate = {
       data: {
         systemPrompt: "",
         userMessage: "",
-        selectedModel: "gemini-2.0-flash",
+        selectedModel: "",
       },
     },
   ],
@@ -230,13 +230,13 @@ const fullPipeline: WorkflowTemplate = {
       id: "txt-sys-1",
       type: "textNode",
       position: { x: 450, y: 500 },
-      data: { text: "" },
+      data: { text: "You are a professional marketing copywriter. Generate a compelling one-paragraph product description." },
     },
     {
       id: "txt-usr-1",
       type: "textNode",
       position: { x: 450, y: 680 },
-      data: { text: "" },
+      data: { text: "Product: Wireless Bluetooth Headphones. Features: Noise cancellation, 30-h battery, foldable design." },
     },
     // LLM #1 — receives crop output as image, text inputs
     {
@@ -246,7 +246,7 @@ const fullPipeline: WorkflowTemplate = {
       data: {
         systemPrompt: "",
         userMessage: "",
-        selectedModel: "gemini-2.0-flash",
+        selectedModel: "",
       },
     },
     // Row 3: Video → Extract Frame
@@ -278,7 +278,7 @@ const fullPipeline: WorkflowTemplate = {
       id: "txt-sys-2",
       type: "textNode",
       position: { x: 900, y: 850 },
-      data: { text: "" },
+      data: { text: "You are a social media manager. Create a tweet-length marketing post based on the product image and video frame." },
     },
     // LLM #2 — receives LLM#1 output as user prompt, text as system, extract frame as image
     {
@@ -288,7 +288,7 @@ const fullPipeline: WorkflowTemplate = {
       data: {
         systemPrompt: "",
         userMessage: "",
-        selectedModel: "gemini-2.0-flash",
+        selectedModel: "",
       },
     },
   ],

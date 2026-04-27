@@ -1,9 +1,7 @@
 "use client";
 
-import { useState } from "react";
 import { useTheme } from "@/hooks/useTheme";
 import { WORKFLOW_TEMPLATES, type WorkflowTemplate } from "@/lib/templates";
-import { useFlowStore } from "@/store/useFlowStore";
 
 const NODE_COLORS: Record<string, string> = {
   workflowCard: "#22c55e",
